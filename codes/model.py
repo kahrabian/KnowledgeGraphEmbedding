@@ -376,7 +376,11 @@ class KGEModel(nn.Module):
                 collate_fn=TestDataset.collate_fn
             )
 
-            test_dataset_list = [test_dataloader_head, test_dataloader_tail]
+            test_dataset_list = []
+            if args.eval_mode != 'tail':
+                test_dataset_list.append(test_dataloader_head)
+            if args.eval_mode != 'head':
+                test_dataset_list.append(test_dataloader_tail)
 
             logs = []
 
