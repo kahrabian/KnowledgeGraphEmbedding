@@ -11,7 +11,7 @@ from torch.utils.data import Dataset
 
 
 class TrainDataset(Dataset):
-    def __init__(self, triples, nentity, nrelation, negative_sample_size, mode):
+    def __init__(self, triples, nentity, nrelation, negative_sample_size, mode, type_index, type_reverse_index):
         self.len = len(triples)
         self.triples = triples
         self.triple_set = set(triples)
@@ -21,6 +21,8 @@ class TrainDataset(Dataset):
         self.mode = mode
         self.count = self.count_frequency(triples)
         self.true_head, self.true_tail = self.get_true_head_and_tail(self.triples)
+        self.type_index = type_index
+        self.type_reverse_index = type_reverse_index
 
     def __len__(self):
         return self.len
@@ -37,7 +39,14 @@ class TrainDataset(Dataset):
         negative_sample_size = 0
 
         while negative_sample_size < self.negative_sample_size:
-            negative_sample = np.random.randint(self.nentity, size=self.negative_sample_size*2)
+            if self.type_index is None:
+                negative_sample = np.random.randint(self.nentity, size=self.negative_sample_size*2)
+            else:
+                if self.mode == 'head-batch':
+                    sample_space = self.type_index[self.type_reverse_index[head]]
+                elif self.mode == 'tail-batch':
+                    sample_space = self.type_index[self.type_reverse_index[tail]]
+                negative_sample = np.random.choice(sample_space, size=self.negative_sample_size*2)
             if self.mode == 'head-batch':
                 mask = np.in1d(
                     negative_sample,

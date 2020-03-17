@@ -8,6 +8,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import random
 
 import numpy as np
@@ -47,6 +48,7 @@ def parse_args(args=None):
     parser.add_argument('-d', '--hidden_dim', default=500, type=int)
     parser.add_argument('-g', '--gamma', default=12.0, type=float)
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
+    parser.add_argument('-typ', '--negative_type_sampling', action='store_true')
     parser.add_argument('-a', '--adversarial_temperature', default=1.0, type=float)
     parser.add_argument('-b', '--batch_size', default=1024, type=int)
     parser.add_argument('-r', '--regularization', default=0.0, type=float)
@@ -224,6 +226,20 @@ def main(args):
     # All true triples
     all_true_triples = train_triples + valid_triples + test_triples
 
+    type_index, type_reverse_index = None, None
+    if args.negative_type_sampling:
+        with open(os.path.join(args.data_path, 'entities.dict'), 'r') as f:
+            e_ix = dict(map(lambda x: x.split(), f.read().split('\n')[:-1]))
+
+        type_index, type_reverse_index = dict(), dict()
+        type_regex = re.compile(r'^/(\w+)/.*$')
+        for i, e in e_ix.items():
+            tp = re.findall(type_regex, e)[0]
+            if tp not in type_index:
+                type_index[tp] = list()
+            type_index[tp].append(int(i))
+            type_reverse_index[int(i)] = tp
+
     kge_model = KGEModel(
         model_name=args.model,
         nentity=nentity,
@@ -231,7 +247,9 @@ def main(args):
         hidden_dim=args.hidden_dim,
         gamma=args.gamma,
         double_entity_embedding=args.double_entity_embedding,
-        double_relation_embedding=args.double_relation_embedding
+        double_relation_embedding=args.double_relation_embedding,
+        type_index=type_index,
+        type_reverse_index=type_reverse_index
     )
 
     logging.info('Model Parameter Configuration:')
@@ -244,7 +262,13 @@ def main(args):
     if args.do_train:
         # Set training dataloader iterator
         train_dataloader_head = DataLoader(
-            TrainDataset(train_triples, nentity, nrelation, args.negative_sample_size, 'head-batch'),
+            TrainDataset(train_triples,
+                         nentity,
+                         nrelation,
+                         args.negative_sample_size,
+                         'head-batch',
+                         type_index,
+                         type_reverse_index),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2),
@@ -252,7 +276,13 @@ def main(args):
         )
 
         train_dataloader_tail = DataLoader(
-            TrainDataset(train_triples, nentity, nrelation, args.negative_sample_size, 'tail-batch'),
+            TrainDataset(train_triples,
+                         nentity,
+                         nrelation,
+                         args.negative_sample_size,
+                         'tail-batch',
+                         type_index,
+                         type_reverse_index),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2),

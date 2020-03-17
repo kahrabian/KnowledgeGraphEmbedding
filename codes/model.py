@@ -21,13 +21,17 @@ from dataloader import TestDataset
 
 class KGEModel(nn.Module):
     def __init__(self, model_name, nentity, nrelation, hidden_dim, gamma,
-                 double_entity_embedding=False, double_relation_embedding=False):
+                 double_entity_embedding=False, double_relation_embedding=False,
+                 type_index=None, type_reverse_index=None):
         super(KGEModel, self).__init__()
         self.model_name = model_name
         self.nentity = nentity
         self.nrelation = nrelation
         self.hidden_dim = hidden_dim
         self.epsilon = 2.0
+
+        self.type_index = type_index
+        self.type_reverse_index = type_reverse_index
 
         self.gamma = nn.Parameter(
             torch.Tensor([gamma]),
@@ -409,6 +413,11 @@ class KGEModel(nn.Module):
 
                             # ranking + 1 is the true ranking used in evaluation metrics
                             ranking = 1 + ranking.item()
+
+                            if model.type_index is not None:
+                                index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
+                                ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
+
                             logs.append({
                                 'MRR': 1.0/ranking,
                                 'MR': float(ranking),
