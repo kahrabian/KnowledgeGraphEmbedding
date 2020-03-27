@@ -14,6 +14,7 @@ import random
 import numpy as np
 import torch
 
+from datetime import datetime
 from torch.utils.data import DataLoader
 
 from model import KGEModel
@@ -43,9 +44,11 @@ def parse_args(args=None):
     parser.add_argument('--model', default='TransE', type=str)
     parser.add_argument('-de', '--double_entity_embedding', action='store_true')
     parser.add_argument('-dr', '--double_relation_embedding', action='store_true')
+    parser.add_argument('-dt', '--double_time_embedding', action='store_true')
 
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int)
     parser.add_argument('-d', '--hidden_dim', default=500, type=int)
+    parser.add_argument('-td', '--time_hidden_dim', default=100, type=int)
     parser.add_argument('-g', '--gamma', default=12.0, type=float)
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
     parser.add_argument('-typ', '--negative_type_sampling', action='store_true')
@@ -124,16 +127,17 @@ def save_model(model, optimizer, save_variable_list, args):
     )
 
 
-def read_triple(file_path, entity2id, relation2id):
+def read_quadruple(file_path, entity2id, relation2id):
     '''
-    Read triples and map them into ids.
+    Read quadruples and map them into ids.
     '''
-    triples = []
+    quadruples = []
     with open(file_path) as fin:
         for line in fin:
-            h, r, t = line.strip().split('\t')
-            triples.append((entity2id[h], relation2id[r], entity2id[t]))
-    return triples
+            h, r, t, ts = line.strip().split('\t')
+            ts = datetime.fromtimestamp(int(ts))
+            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.day, ts.hour))
+    return quadruples
 
 
 def set_logger(args):
@@ -218,15 +222,15 @@ def main(args):
     logging.info('#entity: %d' % nentity)
     logging.info('#relation: %d' % nrelation)
 
-    train_triples = read_triple(os.path.join(args.data_path, 'train.txt'), entity2id, relation2id)
-    logging.info('#train: %d' % len(train_triples))
-    valid_triples = read_triple(os.path.join(args.data_path, 'valid.txt'), entity2id, relation2id)
-    logging.info('#valid: %d' % len(valid_triples))
-    test_triples = read_triple(os.path.join(args.data_path, 'test.txt'), entity2id, relation2id)
-    logging.info('#test: %d' % len(test_triples))
+    train_quadruples = read_quadruple(os.path.join(args.data_path, 'train.txt'), entity2id, relation2id)
+    logging.info('#train: %d' % len(train_quadruples))
+    valid_quadruples = read_quadruple(os.path.join(args.data_path, 'valid.txt'), entity2id, relation2id)
+    logging.info('#valid: %d' % len(valid_quadruples))
+    test_quadruples = read_quadruple(os.path.join(args.data_path, 'test.txt'), entity2id, relation2id)
+    logging.info('#test: %d' % len(test_quadruples))
 
-    # All true triples
-    all_true_triples = train_triples + valid_triples + test_triples
+    # All true quadruples
+    all_true_quadruples = train_quadruples + valid_quadruples + test_quadruples
 
     type_index, type_reverse_index = None, None
     if args.negative_type_sampling:
@@ -247,9 +251,11 @@ def main(args):
         nentity=nentity,
         nrelation=nrelation,
         hidden_dim=args.hidden_dim,
+        time_hidden_dim=args.time_hidden_dim,
         gamma=args.gamma,
         double_entity_embedding=args.double_entity_embedding,
         double_relation_embedding=args.double_relation_embedding,
+        double_time_embedding=args.double_time_embedding,
         type_index=type_index,
         type_reverse_index=type_reverse_index
     )
@@ -264,7 +270,7 @@ def main(args):
     if args.do_train:
         # Set training dataloader iterator
         train_dataloader_head = DataLoader(
-            TrainDataset(train_triples,
+            TrainDataset(train_quadruples,
                          nentity,
                          nrelation,
                          args.negative_sample_size,
@@ -278,7 +284,7 @@ def main(args):
         )
 
         train_dataloader_tail = DataLoader(
-            TrainDataset(train_triples,
+            TrainDataset(train_quadruples,
                          nentity,
                          nrelation,
                          args.negative_sample_size,
@@ -370,7 +376,7 @@ def main(args):
 
             if args.do_valid and step % args.valid_steps == 0:
                 logging.info('Evaluating on Valid Dataset...')
-                metrics = kge_model.test_step(kge_model, valid_triples, all_true_triples, args)
+                metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, args)
                 log_metrics('Valid', step, metrics)
 
         save_variable_list = {
@@ -382,17 +388,17 @@ def main(args):
 
     if args.do_valid:
         logging.info('Evaluating on Valid Dataset...')
-        metrics = kge_model.test_step(kge_model, valid_triples, all_true_triples, args)
+        metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, args)
         log_metrics('Valid', step, metrics)
 
     if args.do_test:
         logging.info('Evaluating on Test Dataset...')
-        metrics = kge_model.test_step(kge_model, test_triples, all_true_triples, args)
+        metrics = kge_model.test_step(kge_model, test_quadruples, all_true_quadruples, args)
         log_metrics('Test', step, metrics)
 
     if args.evaluate_train:
         logging.info('Evaluating on Training Dataset...')
-        metrics = kge_model.test_step(kge_model, train_triples, all_true_triples, args)
+        metrics = kge_model.test_step(kge_model, train_quadruples, all_true_quadruples, args)
         log_metrics('Test', step, metrics)
 
 
