@@ -12,8 +12,11 @@ import re
 import random
 
 import numpy as np
+import pandas as pd
 import torch
 
+from itertools import chain
+from datetime import datetime
 from torch.utils.data import DataLoader
 
 from model import KGEModel
@@ -49,6 +52,7 @@ def parse_args(args=None):
     parser.add_argument('-g', '--gamma', default=12.0, type=float)
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
     parser.add_argument('-typ', '--negative_type_sampling', action='store_true')
+    parser.add_argument('-hev', '--heuristic_evaluation', action='store_true')
     parser.add_argument('-a', '--adversarial_temperature', default=1.0, type=float)
     parser.add_argument('-b', '--batch_size', default=1024, type=int)
     parser.add_argument('-r', '--regularization', default=0.0, type=float)
@@ -242,6 +246,37 @@ def main(args):
             type_index[tp].append(int(i))
             type_reverse_index[int(i)] = tp
 
+        issue_users_idx = None
+        if args.heuristic_evaluation:
+            with open(os.path.join(args.data_path, 'entities.dict'), 'r') as f:
+                re_ix = dict(map(lambda x: x.split()[::-1], f.read().split('\n')[:-1]))
+
+            train_data = pd.read_csv(os.path.join(args.data_path, 'train.txt'), sep='\t', names=['s', 'r', 'o', 't'])
+
+            repo_entity = train_data[train_data['o'].str.startswith('/repo/')][['o', 's']]
+            repo_entity = repo_entity.rename(columns={'o': 'repo', 's': 'entity'})
+
+            entity_users = train_data[train_data['s'].str.startswith('/user/')].groupby('o')['s'].apply(list)
+            entity_users = entity_users.reset_index(name='users').rename(columns={'o': 'entity'})
+
+            repo_users = repo_entity.merge(entity_users, on='entity', how='left')[['repo', 'users']]
+            repo_users['users'] = repo_users.users.apply(lambda x: x if type(x) == list else [])
+            repo_users = repo_users.groupby('repo')['users'].apply(lambda x: list(chain.from_iterable(x)))
+            repo_users = repo_users.reset_index(name='users')
+
+            valid_data = pd.read_csv(os.path.join(args.data_path, 'valid.txt'), sep='\t', names=['s', 'r', 'o', 't'])
+            test_data = pd.read_csv(os.path.join(args.data_path, 'test.txt'), sep='\t', names=['s', 'r', 'o', 't'])
+            all_data = pd.concat([train_data, valid_data, test_data])
+
+            issue_repo = all_data[all_data['o'].str.startswith('/repo/') & all_data['s'].str.startswith('/issue/')]
+            issue_repo = issue_repo.groupby('s')['o'].apply(lambda x: list(x)[0]).reset_index(name='repo')
+            issue_repo = issue_repo.rename(columns={'s': 'issue'})
+
+            issue_users = issue_repo.merge(repo_users, on='repo', how='left')[['issue', 'users']]
+            issue_users['issue'] = issue_users.issue.apply(lambda x: int(re_ix[x]))
+            issue_users['users'] = issue_users.users.apply(lambda x: [int(re_ix[y]) for y in x])
+            issue_users_idx = issue_users.set_index('issue').to_dict()['users']
+
     kge_model = KGEModel(
         model_name=args.model,
         nentity=nentity,
@@ -251,7 +286,8 @@ def main(args):
         double_entity_embedding=args.double_entity_embedding,
         double_relation_embedding=args.double_relation_embedding,
         type_index=type_index,
-        type_reverse_index=type_reverse_index
+        type_reverse_index=type_reverse_index,
+        issue_users_idx=issue_users_idx
     )
 
     logging.info('Model Parameter Configuration:')
