@@ -35,7 +35,7 @@ then
 echo "Start Training......"
 
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE python -u $CODE_PATH/run.py --do_train \
-    --cuda \
+    --cuda --cpu_num 8 \
     --do_valid \
     --do_test \
     --data_path $FULL_DATA_PATH \
