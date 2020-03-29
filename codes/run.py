@@ -235,6 +235,7 @@ def main(args):
     all_true_triples = train_triples + valid_triples + test_triples
 
     type_index, type_reverse_index = None, None
+    issue_users_idx = None
     if args.negative_type_sampling:
         with open(os.path.join(args.data_path, 'entities.dict'), 'r') as f:
             e_ix = dict(map(lambda x: x.split(), f.read().split('\n')[:-1]))
@@ -248,7 +249,6 @@ def main(args):
             type_index[tp].append(int(i))
             type_reverse_index[int(i)] = tp
 
-        issue_users_idx = None
         if args.heuristic_evaluation:
             with open(os.path.join(args.data_path, 'entities.dict'), 'r') as f:
                 re_ix = dict(map(lambda x: x.split()[::-1], f.read().split('\n')[:-1]))
