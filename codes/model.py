@@ -20,8 +20,8 @@ from dataloader import TestDataset
 
 
 class KGEModel(nn.Module):
-    def __init__(self, model_name, nentity, nrelation, hidden_dim, gamma,
-                 double_entity_embedding=False, double_relation_embedding=False,
+    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, gamma,
+                 double_entity_embedding=False, double_relation_embedding=False, double_time_embedding=False,
                  type_index=None, type_reverse_index=None, issue_users_idx=None):
         super(KGEModel, self).__init__()
         self.model_name = model_name
@@ -39,13 +39,17 @@ class KGEModel(nn.Module):
             requires_grad=False
         )
 
-        self.embedding_range = nn.Parameter(
-            torch.Tensor([(self.gamma.item() + self.epsilon) / hidden_dim]),
-            requires_grad=False
-        )
-
         self.entity_dim = hidden_dim*2 if double_entity_embedding else hidden_dim
         self.relation_dim = hidden_dim*2 if double_relation_embedding else hidden_dim
+        self.time_dim = time_hidden_dim*2 if double_time_embedding else time_hidden_dim
+
+        self.relation_dim += (self.time_dim // 2) if double_entity_embedding and \
+            not double_relation_embedding else self.time_dim
+
+        self.embedding_range = nn.Parameter(
+            torch.Tensor([(self.gamma.item() + self.epsilon) / self.relation_dim]),
+            requires_grad=False
+        )
 
         self.entity_embedding = nn.Parameter(torch.zeros(nentity, self.entity_dim))
         nn.init.uniform_(
@@ -61,6 +65,45 @@ class KGEModel(nn.Module):
             b=self.embedding_range.item()
         )
 
+        self.d_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        self.h_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        nn.init.uniform_(
+            tensor=self.d_frq_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+        nn.init.uniform_(
+            tensor=self.h_frq_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
+        self.d_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        self.h_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        nn.init.uniform_(
+            tensor=self.d_phi_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+        nn.init.uniform_(
+            tensor=self.h_phi_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
+        self.d_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        self.h_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        nn.init.uniform_(
+            tensor=self.d_amp_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+        nn.init.uniform_(
+            tensor=self.h_amp_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
         if model_name == 'pRotatE':
             self.modulus = nn.Parameter(torch.Tensor([[0.5 * self.embedding_range.item()]]))
 
@@ -68,31 +111,52 @@ class KGEModel(nn.Module):
         if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE', 'pRotatE']:
             raise ValueError('model %s not supported' % model_name)
 
-        if model_name == 'RotatE' and (not double_entity_embedding or double_relation_embedding):
+        if model_name == 'RotatE' and \
+                (not double_entity_embedding or double_relation_embedding or not double_time_embedding):
             raise ValueError('RotatE should use --double_entity_embedding')
 
-        if model_name == 'ComplEx' and (not double_entity_embedding or not double_relation_embedding):
+        if model_name == 'ComplEx' and \
+                (not double_entity_embedding or not double_relation_embedding or not double_time_embedding):
             raise ValueError('ComplEx should use --double_entity_embedding and --double_relation_embedding')
+
+    def time_embedding(self, entity, day, hour):
+        d_amp = torch.index_select(self.d_amp_embedding, dim=0, index=entity)
+        d_frq = torch.index_select(self.d_frq_embedding, dim=0, index=entity)
+        d_phi = torch.index_select(self.d_phi_embedding, dim=0, index=entity)
+
+        h_amp = torch.index_select(self.h_amp_embedding, dim=0, index=entity)
+        h_frq = torch.index_select(self.h_frq_embedding, dim=0, index=entity)
+        h_phi = torch.index_select(self.h_phi_embedding, dim=0, index=entity)
+
+        d = d_amp * torch.sin(day * d_frq + d_phi)
+        h = h_amp * torch.sin(hour * h_frq + h_phi)
+
+        return d + h
 
     def forward(self, sample, mode='single'):
         '''
-        Forward function that calculate the score of a batch of triples.
-        In the 'single' mode, sample is a batch of triple.
+        Forward function that calculate the score of a batch of quadruples.
+        In the 'single' mode, sample is a batch of quadruple.
         In the 'head-batch' or 'tail-batch' mode, sample consists two part.
         The first part is usually the positive sample.
         And the second part is the entities in the negative samples.
         Because negative samples and positive samples usually share two elements 
-        in their triple ((head, relation) or (relation, tail)).
+        in their quadruple ((head, relation) or (relation, tail)).
         '''
 
         if mode == 'single':
             batch_size, negative_sample_size = sample.size(0), 1
+
+            day = sample[:, 3]
+            hour = sample[:, 4]
 
             head = torch.index_select(
                 self.entity_embedding,
                 dim=0,
                 index=sample[:, 0]
             ).unsqueeze(1)
+
+            head_time = self.time_embedding(sample[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -106,14 +170,25 @@ class KGEModel(nn.Module):
                 index=sample[:, 2]
             ).unsqueeze(1)
 
+            tail_time = self.time_embedding(sample[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+
         elif mode == 'head-batch':
             tail_part, head_part = sample
             batch_size, negative_sample_size = head_part.size(0), head_part.size(1)
+
+            day = tail_part[:, 3]
+            hour = tail_part[:, 4]
 
             head = torch.index_select(
                 self.entity_embedding,
                 dim=0,
                 index=head_part.view(-1)
+            ).view(batch_size, negative_sample_size, -1)
+
+            head_time = self.time_embedding(
+                head_part.view(-1),
+                day.repeat(head_part.shape[1], 1).t().contiguous().view(-1, 1),
+                hour.repeat(head_part.shape[1], 1).t().contiguous().view(-1, 1)
             ).view(batch_size, negative_sample_size, -1)
 
             relation = torch.index_select(
@@ -128,15 +203,22 @@ class KGEModel(nn.Module):
                 index=tail_part[:, 2]
             ).unsqueeze(1)
 
+            tail_time = self.time_embedding(tail_part[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+
         elif mode == 'tail-batch':
             head_part, tail_part = sample
             batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
+
+            day = head_part[:, 3]
+            hour = head_part[:, 4]
 
             head = torch.index_select(
                 self.entity_embedding,
                 dim=0,
                 index=head_part[:, 0]
             ).unsqueeze(1)
+
+            head_time = self.time_embedding(head_part[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -148,6 +230,12 @@ class KGEModel(nn.Module):
                 self.entity_embedding,
                 dim=0,
                 index=tail_part.view(-1)
+            ).view(batch_size, negative_sample_size, -1)
+
+            tail_time = self.time_embedding(
+                tail_part.view(-1),
+                day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1),
+                hour.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
             ).view(batch_size, negative_sample_size, -1)
 
         else:
@@ -162,13 +250,16 @@ class KGEModel(nn.Module):
         }
 
         if self.model_name in model_func:
-            score = model_func[self.model_name](head, relation, tail, mode)
+            score = model_func[self.model_name](head, relation, tail, head_time, tail_time, mode)
         else:
             raise ValueError('model %s not supported' % self.model_name)
 
         return score
 
-    def TransE(self, head, relation, tail, mode):
+    def TransE(self, head, relation, tail, head_time, tail_time, mode):
+        head = torch.cat([head, head_time], dim=2)
+        tail = torch.cat([tail, tail_time], dim=2)
+
         if mode == 'head-batch':
             score = head + (relation - tail)
         else:
@@ -177,7 +268,10 @@ class KGEModel(nn.Module):
         score = self.gamma.item() - torch.norm(score, p=1, dim=2)
         return score
 
-    def DistMult(self, head, relation, tail, mode):
+    def DistMult(self, head, relation, tail, head_time, tail_time, mode):
+        head = torch.cat([head, head_time], dim=2)
+        tail = torch.cat([tail, tail_time], dim=2)
+
         if mode == 'head-batch':
             score = head * (relation * tail)
         else:
@@ -186,10 +280,19 @@ class KGEModel(nn.Module):
         score = score.sum(dim=2)
         return score
 
-    def ComplEx(self, head, relation, tail, mode):
+    def ComplEx(self, head, relation, tail, head_time, tail_time, mode):
         re_head, im_head = torch.chunk(head, 2, dim=2)
         re_relation, im_relation = torch.chunk(relation, 2, dim=2)
         re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+
+        re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
+        re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+
+        re_head = torch.cat([re_head, re_head_time], dim=2)
+        im_head = torch.cat([im_head, im_head_time], dim=2)
+
+        re_tail = torch.cat([re_tail, re_tail_time], dim=2)
+        im_tail = torch.cat([im_tail, im_tail_time], dim=2)
 
         if mode == 'head-batch':
             re_score = re_relation * re_tail + im_relation * im_tail
@@ -203,11 +306,20 @@ class KGEModel(nn.Module):
         score = score.sum(dim=2)
         return score
 
-    def RotatE(self, head, relation, tail, mode):
+    def RotatE(self, head, relation, tail, head_time, tail_time, mode):
         pi = 3.14159265358979323846
 
         re_head, im_head = torch.chunk(head, 2, dim=2)
         re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+
+        re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
+        re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+
+        re_head = torch.cat([re_head, re_head_time], dim=2)
+        im_head = torch.cat([im_head, im_head_time], dim=2)
+
+        re_tail = torch.cat([re_tail, re_tail_time], dim=2)
+        im_tail = torch.cat([im_tail, im_tail_time], dim=2)
 
         # Make phases of relations uniformly distributed in [-pi, pi]
 
@@ -233,7 +345,7 @@ class KGEModel(nn.Module):
         score = self.gamma.item() - score.sum(dim=2)
         return score
 
-    def pRotatE(self, head, relation, tail, mode):
+    def pRotatE(self, head, relation, tail, head_time, tail_time, mode):
         pi = 3.14159262358979323846
 
         # Make phases of entities and relations uniformly distributed in [-pi, pi]
@@ -317,7 +429,7 @@ class KGEModel(nn.Module):
         return log
 
     @staticmethod
-    def test_step(model, test_triples, all_true_triples, args):
+    def test_step(model, test_quadruples, all_true_quadruples, args):
         '''
         Evaluate the model on test or valid datasets
         '''
@@ -329,7 +441,7 @@ class KGEModel(nn.Module):
             # Process test data for AUC-PR evaluation
             sample = list()
             y_true = list()
-            for head, relation, tail in test_triples:
+            for head, relation, tail in test_quadruples:
                 for candidate_region in args.regions:
                     y_true.append(1 if candidate_region == tail else 0)
                     sample.append((head, relation, candidate_region))
@@ -353,8 +465,8 @@ class KGEModel(nn.Module):
             # Prepare dataloader for evaluation
             test_dataloader_head = DataLoader(
                 TestDataset(
-                    test_triples,
-                    all_true_triples,
+                    test_quadruples,
+                    all_true_quadruples,
                     args.nentity,
                     args.nrelation,
                     'head-batch'
@@ -366,8 +478,8 @@ class KGEModel(nn.Module):
 
             test_dataloader_tail = DataLoader(
                 TestDataset(
-                    test_triples,
-                    all_true_triples,
+                    test_quadruples,
+                    all_true_quadruples,
                     args.nentity,
                     args.nrelation,
                     'tail-batch'

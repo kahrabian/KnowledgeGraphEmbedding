@@ -11,16 +11,16 @@ from torch.utils.data import Dataset
 
 
 class TrainDataset(Dataset):
-    def __init__(self, triples, nentity, nrelation, negative_sample_size, mode, type_index, type_reverse_index):
-        self.len = len(triples)
-        self.triples = triples
-        self.triple_set = set(triples)
+    def __init__(self, quadruples, nentity, nrelation, negative_sample_size, mode, type_index, type_reverse_index):
+        self.len = len(quadruples)
+        self.quadruples = quadruples
+        self.quadruple_set = set(quadruples)
         self.nentity = nentity
         self.nrelation = nrelation
         self.negative_sample_size = negative_sample_size
         self.mode = mode
-        self.count = self.count_frequency(triples)
-        self.true_head, self.true_tail = self.get_true_head_and_tail(self.triples)
+        self.count = self.count_frequency(quadruples)
+        self.true_head, self.true_tail = self.get_true_head_and_tail(self.quadruples)
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
 
@@ -28,9 +28,9 @@ class TrainDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        positive_sample = self.triples[idx]
+        positive_sample = self.quadruples[idx]
 
-        head, relation, tail = positive_sample
+        head, relation, tail, _, _ = positive_sample
 
         subsampling_weight = self.count[(head, relation)] + self.count[(tail, -relation-1)]
         subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
@@ -84,13 +84,13 @@ class TrainDataset(Dataset):
         return positive_sample, negative_sample, subsample_weight, mode
 
     @staticmethod
-    def count_frequency(triples, start=4):
+    def count_frequency(quadruples, start=4):
         '''
-        Get frequency of a partial triple like (head, relation) or (relation, tail)
+        Get frequency of a partial quadruple like (head, relation) or (relation, tail)
         The frequency will be used for subsampling like word2vec
         '''
         count = {}
-        for head, relation, tail in triples:
+        for head, relation, tail, _, _ in quadruples:
             if (head, relation) not in count:
                 count[(head, relation)] = start
             else:
@@ -103,16 +103,16 @@ class TrainDataset(Dataset):
         return count
 
     @staticmethod
-    def get_true_head_and_tail(triples):
+    def get_true_head_and_tail(quadruples):
         '''
-        Build a dictionary of true triples that will
-        be used to filter these true triples for negative sampling
+        Build a dictionary of true quadruples that will
+        be used to filter these true quadruples for negative sampling
         '''
 
         true_head = {}
         true_tail = {}
 
-        for head, relation, tail in triples:
+        for head, relation, tail, _, _ in quadruples:
             if (head, relation) not in true_tail:
                 true_tail[(head, relation)] = []
             true_tail[(head, relation)].append(tail)
@@ -129,10 +129,10 @@ class TrainDataset(Dataset):
 
 
 class TestDataset(Dataset):
-    def __init__(self, triples, all_true_triples, nentity, nrelation, mode):
-        self.len = len(triples)
-        self.triple_set = set(all_true_triples)
-        self.triples = triples
+    def __init__(self, quadruples, all_true_quadruples, nentity, nrelation, mode):
+        self.len = len(quadruples)
+        self.quadruple_set = set(all_true_quadruples)
+        self.quadruples = quadruples
         self.nentity = nentity
         self.nrelation = nrelation
         self.mode = mode
@@ -141,14 +141,14 @@ class TestDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        head, relation, tail = self.triples[idx]
+        head, relation, tail, day, hour = self.quadruples[idx]
 
         if self.mode == 'head-batch':
-            tmp = [(0, rand_head) if (rand_head, relation, tail) not in self.triple_set
+            tmp = [(0, rand_head) if (rand_head, relation, tail, day, hour) not in self.quadruple_set
                    else (-1, head) for rand_head in range(self.nentity)]
             tmp[head] = (0, head)
         elif self.mode == 'tail-batch':
-            tmp = [(0, rand_tail) if (head, relation, rand_tail) not in self.triple_set
+            tmp = [(0, rand_tail) if (head, relation, rand_tail, day, hour) not in self.quadruple_set
                    else (-1, tail) for rand_tail in range(self.nentity)]
             tmp[tail] = (0, tail)
         else:
@@ -158,7 +158,7 @@ class TestDataset(Dataset):
         filter_bias = tmp[:, 0].float()
         negative_sample = tmp[:, 1]
 
-        positive_sample = torch.LongTensor((head, relation, tail))
+        positive_sample = torch.LongTensor((head, relation, tail, day, hour))
 
         return positive_sample, negative_sample, filter_bias, self.mode
 

@@ -27,6 +27,7 @@ MAX_STEPS=${12}
 TEST_BATCH_SIZE=${13}
 
 EVAL_MODE=${14}
+TIME_HIDDEN_DIM=${15}
 
 if [ $MODE == "train" ]
 then
@@ -34,7 +35,7 @@ then
 echo "Start Training......"
 
 CUDA_VISIBLE_DEVICES=$GPU_DEVICE python -u $CODE_PATH/run.py --do_train \
-    --cuda \
+    --cuda --cpu_num 8 \
     --do_valid \
     --do_test \
     --data_path $FULL_DATA_PATH \
@@ -43,7 +44,8 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE python -u $CODE_PATH/run.py --do_train \
     -g $GAMMA -a $ALPHA \
     -lr $LEARNING_RATE --max_steps $MAX_STEPS \
     -save $SAVE --test_batch_size $TEST_BATCH_SIZE \
-    --eval_mode ${14} ${15} ${16} ${17} ${18} ${19} ${20}
+    --eval_mode $EVAL_MODE --time_hidden_dim $TIME_HIDDEN_DIM \
+    ${16} ${17} ${18} ${19} ${20}
 
 elif [ $MODE == "valid" ]
 then
