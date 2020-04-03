@@ -20,7 +20,7 @@ from dataloader import TestDataset
 
 
 class KGEModel(nn.Module):
-    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, gamma,
+    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, gamma, epsilon,
                  double_entity_embedding=False, double_relation_embedding=False, double_time_embedding=False,
                  type_index=None, type_reverse_index=None, issue_users_idx=None):
         super(KGEModel, self).__init__()
@@ -28,7 +28,7 @@ class KGEModel(nn.Module):
         self.nentity = nentity
         self.nrelation = nrelation
         self.hidden_dim = hidden_dim
-        self.epsilon = 2.0
+        self.epsilon = epsilon
 
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
@@ -158,6 +158,9 @@ class KGEModel(nn.Module):
 
             head_time = self.time_embedding(sample[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
+            true_head = None
+            head_time_neg = None
+
             relation = torch.index_select(
                 self.relation_embedding,
                 dim=0,
@@ -172,24 +175,48 @@ class KGEModel(nn.Module):
 
             tail_time = self.time_embedding(sample[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
+            true_tail = None
+            tail_time_neg = None
+
         elif mode == 'head-batch':
-            tail_part, head_part = sample
+            tail_part, head_part, time_part = sample
             batch_size, negative_sample_size = head_part.size(0), head_part.size(1)
+            negative_time_sample_size = time_part.size(1)
 
             day = tail_part[:, 3]
             hour = tail_part[:, 4]
 
-            head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part.view(-1)
-            ).view(batch_size, negative_sample_size, -1)
+            if negative_sample_size != 0:
+                head = torch.index_select(
+                    self.entity_embedding,
+                    dim=0,
+                    index=head_part.view(-1)
+                ).view(batch_size, negative_sample_size, -1)
 
-            head_time = self.time_embedding(
-                head_part.view(-1),
-                day.repeat(head_part.shape[1], 1).t().contiguous().view(-1, 1),
-                hour.repeat(head_part.shape[1], 1).t().contiguous().view(-1, 1)
-            ).view(batch_size, negative_sample_size, -1)
+                head_time = self.time_embedding(
+                    head_part.view(-1),
+                    day.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1),
+                    hour.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1)
+                ).view(batch_size, negative_sample_size, -1)
+            else:
+                head = None
+                head_time = None
+
+            if negative_time_sample_size != 0:
+                true_head = torch.index_select(
+                    self.entity_embedding,
+                    dim=0,
+                    index=tail_part[:, 0]
+                ).unsqueeze(1)
+
+                head_time_neg = self.time_embedding(
+                    tail_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
+                    time_part[:, :, 0].view(-1, 1),
+                    time_part[:, :, 1].view(-1, 1),
+                ).view(batch_size, negative_time_sample_size, -1)
+            else:
+                true_head = None
+                head_time_neg = None
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -205,9 +232,21 @@ class KGEModel(nn.Module):
 
             tail_time = self.time_embedding(tail_part[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
-        elif mode == 'tail-batch':
-            head_part, tail_part = sample
+            true_tail = None
+
+            if negative_time_sample_size != 0:
+                tail_time_neg = self.time_embedding(
+                    tail_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
+                    time_part[:, :, 0].view(-1, 1),
+                    time_part[:, :, 1].view(-1, 1),
+                ).view(batch_size, negative_time_sample_size, -1)
+            else:
+                tail_time_neg = None
+
+        elif mode in ['tail-batch', 'time']:
+            head_part, tail_part, time_part = sample
             batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
+            negative_time_sample_size = time_part.size(1)
 
             day = head_part[:, 3]
             hour = head_part[:, 4]
@@ -220,23 +259,54 @@ class KGEModel(nn.Module):
 
             head_time = self.time_embedding(head_part[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
 
+            true_head = None
+
+            if negative_time_sample_size != 0:
+                head_time_neg = self.time_embedding(
+                    head_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
+                    time_part[:, :, 0].view(-1, 1),
+                    time_part[:, :, 1].view(-1, 1),
+                ).view(batch_size, negative_time_sample_size, -1)
+            else:
+                head_time_neg = None
+
             relation = torch.index_select(
                 self.relation_embedding,
                 dim=0,
                 index=head_part[:, 1]
             ).unsqueeze(1)
 
-            tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=tail_part.view(-1)
-            ).view(batch_size, negative_sample_size, -1)
+            if negative_sample_size != 0:
+                tail = torch.index_select(
+                    self.entity_embedding,
+                    dim=0,
+                    index=tail_part.view(-1)
+                ).view(batch_size, negative_sample_size, -1)
 
-            tail_time = self.time_embedding(
-                tail_part.view(-1),
-                day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1),
-                hour.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
-            ).view(batch_size, negative_sample_size, -1)
+                tail_time = self.time_embedding(
+                    tail_part.view(-1),
+                    day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1),
+                    hour.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
+                ).view(batch_size, negative_sample_size, -1)
+            else:
+                tail = None
+                tail_time = None
+
+            if negative_time_sample_size != 0:
+                true_tail = torch.index_select(
+                    self.entity_embedding,
+                    dim=0,
+                    index=head_part[:, 2]
+                ).unsqueeze(1)
+
+                tail_time_neg = self.time_embedding(
+                    head_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
+                    time_part[:, :, 0].view(-1, 1),
+                    time_part[:, :, 1].view(-1, 1),
+                ).view(batch_size, negative_time_sample_size, -1)
+            else:
+                true_tail = None
+                tail_time_neg = None
 
         else:
             raise ValueError('mode %s not supported' % mode)
@@ -250,13 +320,15 @@ class KGEModel(nn.Module):
         }
 
         if self.model_name in model_func:
-            score = model_func[self.model_name](head, relation, tail, head_time, tail_time, mode)
+            score = model_func[self.model_name](
+                head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode)
         else:
             raise ValueError('model %s not supported' % self.model_name)
 
         return score
 
-    def TransE(self, head, relation, tail, head_time, tail_time, mode):
+    def TransE(self,
+               head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode):
         head = torch.cat([head, head_time], dim=2)
         tail = torch.cat([tail, tail_time], dim=2)
 
@@ -268,7 +340,8 @@ class KGEModel(nn.Module):
         score = self.gamma.item() - torch.norm(score, p=1, dim=2)
         return score
 
-    def DistMult(self, head, relation, tail, head_time, tail_time, mode):
+    def DistMult(self,
+                 head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode):
         head = torch.cat([head, head_time], dim=2)
         tail = torch.cat([tail, tail_time], dim=2)
 
@@ -280,7 +353,8 @@ class KGEModel(nn.Module):
         score = score.sum(dim=2)
         return score
 
-    def ComplEx(self, head, relation, tail, head_time, tail_time, mode):
+    def ComplEx(self,
+                head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode):
         re_head, im_head = torch.chunk(head, 2, dim=2)
         re_relation, im_relation = torch.chunk(relation, 2, dim=2)
         re_tail, im_tail = torch.chunk(tail, 2, dim=2)
@@ -306,20 +380,76 @@ class KGEModel(nn.Module):
         score = score.sum(dim=2)
         return score
 
-    def RotatE(self, head, relation, tail, head_time, tail_time, mode):
+    def RotatE(self,
+               head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode):
         pi = 3.14159265358979323846
 
-        re_head, im_head = torch.chunk(head, 2, dim=2)
-        re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+        if head is not None:
+            re_head, im_head = torch.chunk(head, 2, dim=2)
+        else:
+            re_head, im_head = None, None
+        if tail is not None:
+            re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+        else:
+            re_tail, im_tail = None, None
 
-        re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
-        re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+        if head_time is not None:
+            re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
+        else:
+            re_head_time, im_head_time = None, None
+        if tail_time is not None:
+            re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+        else:
+            re_tail_time, im_tail_time = None, None
 
-        re_head = torch.cat([re_head, re_head_time], dim=2)
-        im_head = torch.cat([im_head, im_head_time], dim=2)
+        if mode != 'single' and head_time_neg is not None and tail_time_neg is not None:
+            re_head_time_neg, im_head_time_neg = torch.chunk(head_time_neg, 2, dim=2)
+            re_tail_time_neg, im_tail_time_neg = torch.chunk(tail_time_neg, 2, dim=2)
+        else:
+            re_head_time_neg, im_head_time_neg = None, None
+            re_tail_time_neg, im_tail_time_neg = None, None
 
-        re_tail = torch.cat([re_tail, re_tail_time], dim=2)
-        im_tail = torch.cat([im_tail, im_tail_time], dim=2)
+        if re_head_time_neg is not None and im_head_time_neg is not None:
+            if mode == 'head-batch':
+                re_true_head, im_true_head = torch.chunk(true_head, 2, dim=2)
+                re_head_neg = torch.cat([re_true_head.repeat(1, re_head_time_neg.size(1), 1), re_head_time_neg], dim=2)
+                im_head_neg = torch.cat([im_true_head.repeat(1, im_head_time_neg.size(1), 1), im_head_time_neg], dim=2)
+            elif mode in ['tail-batch', 'time']:
+                re_head_neg = torch.cat([re_head.repeat(1, re_head_time_neg.size(1), 1), re_head_time_neg], dim=2)
+                im_head_neg = torch.cat([im_head.repeat(1, im_head_time_neg.size(1), 1), im_head_time_neg], dim=2)
+        else:
+            re_head_neg = None
+            im_head_neg = None
+
+        if re_head is not None and re_head_time is not None:
+            re_head = torch.cat([re_head, re_head_time], dim=2)
+        else:
+            re_head = None
+        if im_head is not None and im_head_time is not None:
+            im_head = torch.cat([im_head, im_head_time], dim=2)
+        else:
+            im_head = None
+
+        if re_tail_time_neg is not None and im_tail_time_neg is not None:
+            if mode in ['tail-batch', 'time']:
+                re_true_tail, im_true_tail = torch.chunk(true_tail, 2, dim=2)
+                re_tail_neg = torch.cat([re_true_tail.repeat(1, re_tail_time_neg.size(1), 1), re_tail_time_neg], dim=2)
+                im_tail_neg = torch.cat([re_true_tail.repeat(1, im_tail_time_neg.size(1), 1), im_tail_time_neg], dim=2)
+            elif mode == 'head-batch':
+                re_tail_neg = torch.cat([re_tail.repeat(1, re_tail_time_neg.size(1), 1), re_tail_time_neg], dim=2)
+                im_tail_neg = torch.cat([im_tail.repeat(1, im_tail_time_neg.size(1), 1), im_tail_time_neg], dim=2)
+        else:
+            re_tail_neg = None
+            im_tail_neg = None
+
+        if re_tail is not None and re_tail_time is not None:
+            re_tail = torch.cat([re_tail, re_tail_time], dim=2)
+        else:
+            re_tail = None
+        if im_tail is not None and im_tail_time is not None:
+            im_tail = torch.cat([im_tail, im_tail_time], dim=2)
+        else:
+            im_tail = None
 
         # Make phases of relations uniformly distributed in [-pi, pi]
 
@@ -328,11 +458,91 @@ class KGEModel(nn.Module):
         re_relation = torch.cos(phase_relation)
         im_relation = torch.sin(phase_relation)
 
+        if mode != 'single' and re_head_neg is not None and im_tail_neg is not None:
+            re_relation_neg = re_relation.repeat(1, re_head_neg.size(1), 1)
+            im_relation_neg = im_relation.repeat(1, im_tail_neg.size(1), 1)
+        else:
+            re_relation_neg = None
+            im_relation_neg = None
+
         if mode == 'head-batch':
-            re_score = re_relation * re_tail + im_relation * im_tail
-            im_score = re_relation * im_tail - im_relation * re_tail
-            re_score = re_score - re_head
-            im_score = im_score - im_head
+            if re_relation is not None and im_relation is not None and \
+                    re_tail is not None and im_tail is not None and \
+                    re_head is not None and im_head is not None:
+                re_score = re_relation * re_tail + im_relation * im_tail
+                im_score = re_relation * im_tail - im_relation * re_tail
+                re_score = re_score - re_head
+                im_score = im_score - im_head
+            else:
+                re_score = None
+                im_score = None
+
+            if re_relation_neg is not None and im_relation_neg is not None and \
+                    re_tail_neg is not None and im_tail_neg is not None and \
+                    re_head_neg is not None and im_head_neg is not None:
+                re_score_neg = re_relation_neg * re_tail_neg + im_relation_neg * im_tail_neg
+                im_score_neg = re_relation_neg * im_tail_neg - im_relation_neg * re_tail_neg
+                re_score_neg = re_score_neg - re_head_neg
+                im_score_neg = im_score_neg - im_head_neg
+            else:
+                re_score_neg = None
+                im_score_neg = None
+
+            if re_score is not None and re_score_neg is not None:
+                re_score = torch.cat([re_score, re_score_neg], dim=1)
+            elif re_score is not None:
+                re_score = re_score
+            elif re_score_neg is not None:
+                re_score = re_score_neg
+            else:
+                raise Exception('number of negative samples could not be zero')
+            if im_score is not None and im_score_neg is not None:
+                im_score = torch.cat([im_score, im_score_neg], dim=1)
+            elif im_score is not None:
+                im_score = im_score
+            elif im_score_neg is not None:
+                im_score = im_score_neg
+            else:
+                raise Exception('number of negative samples could not be zero')
+        elif mode in ['tail-batch', 'time']:
+            if re_head is not None and im_head is not None and \
+                    re_relation is not None and im_relation is not None and \
+                    re_tail is not None and im_tail is not None:
+                re_score = re_head * re_relation - im_head * im_relation
+                im_score = re_head * im_relation + im_head * re_relation
+                re_score = re_score - re_tail
+                im_score = im_score - im_tail
+            else:
+                re_score = None
+                im_score = None
+
+            if re_relation_neg is not None and im_relation_neg is not None and \
+                    re_head_neg is not None and im_head_neg is not None and \
+                    re_tail_neg is not None and im_tail_neg is not None:
+                re_score_neg = re_head_neg * re_relation_neg - im_head_neg * im_relation_neg
+                im_score_neg = im_head_neg * re_relation_neg + re_head_neg * im_relation_neg
+                re_score_neg = re_score_neg - re_tail_neg
+                im_score_neg = im_score_neg - im_tail_neg
+            else:
+                re_score_neg = None
+                im_score_neg = None
+
+            if re_score is not None and re_score_neg is not None:
+                re_score = torch.cat([re_score, re_score_neg], dim=1)
+            elif re_score is not None:
+                re_score = re_score
+            elif re_score_neg is not None:
+                re_score = re_score_neg
+            else:
+                raise Exception('number of negative samples could not be zero')
+            if im_score is not None and im_score_neg is not None:
+                im_score = torch.cat([im_score, im_score_neg], dim=1)
+            elif im_score is not None:
+                im_score = im_score
+            elif im_score_neg is not None:
+                im_score = im_score_neg
+            else:
+                raise Exception('number of negative samples could not be zero')
         else:
             re_score = re_head * re_relation - im_head * im_relation
             im_score = re_head * im_relation + im_head * re_relation
@@ -345,7 +555,8 @@ class KGEModel(nn.Module):
         score = self.gamma.item() - score.sum(dim=2)
         return score
 
-    def pRotatE(self, head, relation, tail, head_time, tail_time, mode):
+    def pRotatE(self,
+                head, relation, tail, true_head, true_tail, head_time, tail_time, head_time_neg, tail_time_neg, mode):
         pi = 3.14159262358979323846
 
         # Make phases of entities and relations uniformly distributed in [-pi, pi]
@@ -375,14 +586,15 @@ class KGEModel(nn.Module):
 
         optimizer.zero_grad()
 
-        positive_sample, negative_sample, subsampling_weight, mode = next(train_iterator)
+        positive_sample, negative_sample, negative_time_sample, subsampling_weight, mode = next(train_iterator)
 
         if args.cuda:
             positive_sample = positive_sample.cuda()
             negative_sample = negative_sample.cuda()
+            negative_time_sample = negative_time_sample.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        negative_score = model((positive_sample, negative_sample), mode=mode)
+        negative_score = model((positive_sample, negative_sample, negative_time_sample), mode=mode)
 
         if args.negative_adversarial_sampling:
             # In self-adversarial sampling, we do not apply back-propagation on the sampling weight
@@ -463,37 +675,52 @@ class KGEModel(nn.Module):
         else:
             # Otherwise use standard (filtered) MRR, MR, HITS@1, HITS@3, and HITS@10 metrics
             # Prepare dataloader for evaluation
-            test_dataloader_head = DataLoader(
-                TestDataset(
-                    test_quadruples,
-                    all_true_quadruples,
-                    args.nentity,
-                    args.nrelation,
-                    'head-batch'
-                ),
-                batch_size=args.test_batch_size,
-                num_workers=max(1, args.cpu_num//2),
-                collate_fn=TestDataset.collate_fn
-            )
+            if args.eval_mode != 'time':
+                test_dataloader_head = DataLoader(
+                    TestDataset(
+                        test_quadruples,
+                        all_true_quadruples,
+                        args.nentity,
+                        args.nrelation,
+                        'head-batch'
+                    ),
+                    batch_size=args.test_batch_size,
+                    num_workers=max(1, args.cpu_num//2),
+                    collate_fn=TestDataset.collate_fn
+                )
 
-            test_dataloader_tail = DataLoader(
-                TestDataset(
-                    test_quadruples,
-                    all_true_quadruples,
-                    args.nentity,
-                    args.nrelation,
-                    'tail-batch'
-                ),
-                batch_size=args.test_batch_size,
-                num_workers=max(1, args.cpu_num//2),
-                collate_fn=TestDataset.collate_fn
-            )
+                test_dataloader_tail = DataLoader(
+                    TestDataset(
+                        test_quadruples,
+                        all_true_quadruples,
+                        args.nentity,
+                        args.nrelation,
+                        'tail-batch'
+                    ),
+                    batch_size=args.test_batch_size,
+                    num_workers=max(1, args.cpu_num//2),
+                    collate_fn=TestDataset.collate_fn
+                )
 
-            test_dataset_list = []
-            if args.eval_mode != 'tail':
-                test_dataset_list.append(test_dataloader_head)
-            if args.eval_mode != 'head':
-                test_dataset_list.append(test_dataloader_tail)
+                test_dataset_list = []
+                if args.eval_mode != 'tail':
+                    test_dataset_list.append(test_dataloader_head)
+                if args.eval_mode != 'head':
+                    test_dataset_list.append(test_dataloader_tail)
+            else:
+                test_dataloader_time = DataLoader(
+                    TestDataset(
+                        test_quadruples,
+                        all_true_quadruples,
+                        args.nentity,
+                        args.nrelation,
+                        'time'
+                    ),
+                    batch_size=args.test_batch_size,
+                    num_workers=max(1, args.cpu_num//2),
+                    collate_fn=TestDataset.collate_fn
+                )
+                test_dataset_list = [test_dataloader_time, ]
 
             logs = []
 
@@ -502,15 +729,16 @@ class KGEModel(nn.Module):
 
             with torch.no_grad():
                 for test_dataset in test_dataset_list:
-                    for positive_sample, negative_sample, filter_bias, mode in test_dataset:
+                    for positive_sample, negative_sample, negative_time_sample, filter_bias, mode in test_dataset:
                         if args.cuda:
                             positive_sample = positive_sample.cuda()
                             negative_sample = negative_sample.cuda()
+                            negative_time_sample = negative_time_sample.cuda()
                             filter_bias = filter_bias.cuda()
 
                         batch_size = positive_sample.size(0)
 
-                        score = model((positive_sample, negative_sample), mode)
+                        score = model((positive_sample, negative_sample, negative_time_sample), mode)
                         score += filter_bias
 
                         # Explicitly sort all the entities to ensure that there is no test exposure bias
@@ -522,6 +750,8 @@ class KGEModel(nn.Module):
                         elif mode == 'tail-batch':
                             positive_arg = positive_sample[:, 2]
                             positive_issue_idx = positive_sample[:, 0]
+                        elif mode == 'time':
+                            positive_arg = (positive_sample[:, 3] - 1) * 24 + positive_sample[:, 4]
                         else:
                             raise ValueError('mode %s not supported' % mode)
 
@@ -533,7 +763,7 @@ class KGEModel(nn.Module):
                             # ranking + 1 is the true ranking used in evaluation metrics
                             ranking = 1 + ranking.item()
 
-                            if model.type_index is not None:
+                            if mode != 'time' and model.type_index is not None:
                                 index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
                                 if model.issue_users_idx is None:
                                     ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
@@ -544,6 +774,8 @@ class KGEModel(nn.Module):
                                         ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
                                     else:
                                         ranking = issue_ranking
+                            elif mode != 'time':
+                                pass
 
                             logs.append({
                                 'MRR': 1.0/ranking,
