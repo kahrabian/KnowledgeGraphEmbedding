@@ -73,6 +73,8 @@ def parse_args(args=None):
 
     parser.add_argument('--eval_mode', default='both', type=str, choices=['head', 'tail', 'both', 'time'])
 
+    parser.add_argument('--eval_only', action='store_true')
+
     parser.add_argument('--save_checkpoint_steps', default=10000, type=int)
     parser.add_argument('--valid_steps', default=10000, type=int)
     parser.add_argument('--log_steps', default=100, type=int, help='train log every xx steps')
@@ -317,7 +319,8 @@ def main(args):
                          args.negative_time_sample_size,
                          'head-batch',
                          type_index,
-                         type_reverse_index),
+                         type_reverse_index,
+                         args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2),
@@ -332,7 +335,8 @@ def main(args):
                          args.negative_time_sample_size,
                          'tail-batch',
                          type_index,
-                         type_reverse_index),
+                         type_reverse_index,
+                         args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2),

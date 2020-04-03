@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 
 class TrainDataset(Dataset):
     def __init__(self, quadruples, nentity, nrelation, negative_sample_size, negative_time_sample_size, mode,
-                 type_index, type_reverse_index):
+                 type_index, type_reverse_index, eval_only):
         self.len = len(quadruples)
         self.quadruples = quadruples
         self.quadruple_set = set(quadruples)
@@ -25,6 +25,7 @@ class TrainDataset(Dataset):
         self.true_head, self.true_tail = self.get_true_head_and_tail(self.quadruples)
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
+        self.eval_only = eval_only
 
     def __len__(self):
         return self.len
@@ -41,7 +42,7 @@ class TrainDataset(Dataset):
         negative_sample_size = 0
 
         while negative_sample_size < self.negative_sample_size:
-            if self.type_index is None:
+            if self.eval_only or self.type_index is None:
                 negative_sample = np.random.randint(self.nentity, size=self.negative_sample_size*2)
             else:
                 if self.mode == 'head-batch':
@@ -69,7 +70,10 @@ class TrainDataset(Dataset):
             negative_sample_list.append(negative_sample)
             negative_sample_size += negative_sample.size
 
-        negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
+        if len(negative_sample_list) != 0:
+            negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
+        else:
+            negative_sample = np.array([])
 
         negative_time_sample_list = []
         negative_time_sample_size = 0
@@ -190,20 +194,23 @@ class TestDataset(Dataset):
         filter_bias = tmp[:, 0].float()
         if self.mode != 'time':
             negative_sample = tmp[:, 1]
+            negative_time_sample = torch.from_numpy(np.array([]))
         else:
-            negative_sample = tmp[:, 1:3]
+            negative_sample = torch.from_numpy(np.array([]))
+            negative_time_sample = tmp[:, 1:3]
 
         positive_sample = torch.LongTensor((head, relation, tail, day, hour))
 
-        return positive_sample, negative_sample, filter_bias, self.mode
+        return positive_sample, negative_sample, negative_time_sample, filter_bias, self.mode
 
     @staticmethod
     def collate_fn(data):
         positive_sample = torch.stack([_[0] for _ in data], dim=0)
         negative_sample = torch.stack([_[1] for _ in data], dim=0)
-        filter_bias = torch.stack([_[2] for _ in data], dim=0)
-        mode = data[0][3]
-        return positive_sample, negative_sample, filter_bias, mode
+        negative_time_sample = torch.stack([_[2] for _ in data], dim=0)
+        filter_bias = torch.stack([_[3] for _ in data], dim=0)
+        mode = data[0][4]
+        return positive_sample, negative_sample, negative_time_sample, filter_bias, mode
 
 
 class BidirectionalOneShotIterator(object):
