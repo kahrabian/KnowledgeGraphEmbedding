@@ -7,27 +7,29 @@ DATA_PATH=data
 SAVE_PATH=models
 
 #The first four parameters must be provided
-MODE=$1
-MODEL=$2
-DATASET=$3
-GPU_DEVICE=$4
-SAVE_ID=$5
+MODE=${1}
+MODEL=${2}
+DATASET=${3}
+GPU_DEVICE=${4}
+SAVE_ID=${5}
 
 FULL_DATA_PATH=$DATA_PATH/$DATASET
 SAVE=$SAVE_PATH/"$MODEL"_"$DATASET"_"$SAVE_ID"
 
 #Only used in training
-BATCH_SIZE=$6
-NEGATIVE_SAMPLE_SIZE=$7
-HIDDEN_DIM=$8
-GAMMA=$9
-ALPHA=${10}
-LEARNING_RATE=${11}
-MAX_STEPS=${12}
-TEST_BATCH_SIZE=${13}
+BATCH_SIZE=${6}
+NEGATIVE_SAMPLE_SIZE=${7}
+HIDDEN_DIM=${8}
+GAMMA=${9}
+EPSILON=${10}
+ALPHA=${11}
+LEARNING_RATE=${12}
+MAX_STEPS=${13}
+TEST_BATCH_SIZE=${14}
 
-EVAL_MODE=${14}
-TIME_HIDDEN_DIM=${15}
+EVAL_MODE=${15}
+TIME_HIDDEN_DIM=${16}
+NEGATIVE_TIM_SAMPLE_SIZE=${17}
 
 if [ $MODE == "train" ]
 then
@@ -41,11 +43,12 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE python -u $CODE_PATH/run.py --do_train \
     --data_path $FULL_DATA_PATH \
     --model $MODEL \
     -n $NEGATIVE_SAMPLE_SIZE -b $BATCH_SIZE -d $HIDDEN_DIM \
-    -g $GAMMA -a $ALPHA \
+    -g $GAMMA -e $EPSILON -a $ALPHA \
     -lr $LEARNING_RATE --max_steps $MAX_STEPS \
     -save $SAVE --test_batch_size $TEST_BATCH_SIZE \
     --eval_mode $EVAL_MODE --time_hidden_dim $TIME_HIDDEN_DIM \
-    ${16} ${17} ${18} ${19} ${20}
+    -nt $NEGATIVE_TIM_SAMPLE_SIZE \
+    ${18} ${19} ${20} ${21} ${22} ${23}
 
 elif [ $MODE == "valid" ]
 then

@@ -49,9 +49,11 @@ def parse_args(args=None):
     parser.add_argument('-dt', '--double_time_embedding', action='store_true')
 
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int)
+    parser.add_argument('-nt', '--negative_time_sample_size', default=0, type=int)
     parser.add_argument('-d', '--hidden_dim', default=500, type=int)
     parser.add_argument('-td', '--time_hidden_dim', default=100, type=int)
     parser.add_argument('-g', '--gamma', default=12.0, type=float)
+    parser.add_argument('-e', '--epsilon', default=2.0, type=float)
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
     parser.add_argument('-typ', '--negative_type_sampling', action='store_true')
     parser.add_argument('-hev', '--heuristic_evaluation', action='store_true')
@@ -69,7 +71,7 @@ def parse_args(args=None):
     parser.add_argument('--max_steps', default=100000, type=int)
     parser.add_argument('--warm_up_steps', default=None, type=int)
 
-    parser.add_argument('--eval_mode', default='both', type=str, choices=['head', 'tail', 'both'])
+    parser.add_argument('--eval_mode', default='both', type=str, choices=['head', 'tail', 'both', 'time'])
 
     parser.add_argument('--save_checkpoint_steps', default=10000, type=int)
     parser.add_argument('--valid_steps', default=10000, type=int)
@@ -289,6 +291,7 @@ def main(args):
         hidden_dim=args.hidden_dim,
         time_hidden_dim=args.time_hidden_dim,
         gamma=args.gamma,
+        epsilon=args.epsilon,
         double_entity_embedding=args.double_entity_embedding,
         double_relation_embedding=args.double_relation_embedding,
         double_time_embedding=args.double_time_embedding,
@@ -311,6 +314,7 @@ def main(args):
                          nentity,
                          nrelation,
                          args.negative_sample_size,
+                         args.negative_time_sample_size,
                          'head-batch',
                          type_index,
                          type_reverse_index),
@@ -325,6 +329,7 @@ def main(args):
                          nentity,
                          nrelation,
                          args.negative_sample_size,
+                         args.negative_time_sample_size,
                          'tail-batch',
                          type_index,
                          type_reverse_index),
