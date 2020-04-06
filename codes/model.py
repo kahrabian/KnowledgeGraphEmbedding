@@ -65,41 +65,41 @@ class KGEModel(nn.Module):
             b=self.embedding_range.item()
         )
 
+        self.m_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         self.d_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        self.h_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        nn.init.uniform_(
+            tensor=self.m_frq_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
         nn.init.uniform_(
             tensor=self.d_frq_embedding,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
+
+        self.m_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        self.d_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
-            tensor=self.h_frq_embedding,
+            tensor=self.m_phi_embedding,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
-
-        self.d_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        self.h_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
             tensor=self.d_phi_embedding,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
+
+        self.m_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
+        self.d_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
-            tensor=self.h_phi_embedding,
+            tensor=self.m_amp_embedding,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
-
-        self.d_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        self.h_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
             tensor=self.d_amp_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-        nn.init.uniform_(
-            tensor=self.h_amp_embedding,
             a=-self.embedding_range.item(),
             b=self.embedding_range.item()
         )
@@ -119,19 +119,19 @@ class KGEModel(nn.Module):
                 (not double_entity_embedding or not double_relation_embedding or not double_time_embedding):
             raise ValueError('ComplEx should use --double_entity_embedding and --double_relation_embedding')
 
-    def time_embedding(self, entity, day, hour):
+    def time_embedding(self, entity, month, day):
+        m_amp = torch.index_select(self.m_amp_embedding, dim=0, index=entity)
+        m_frq = torch.index_select(self.m_frq_embedding, dim=0, index=entity)
+        m_phi = torch.index_select(self.m_phi_embedding, dim=0, index=entity)
+
         d_amp = torch.index_select(self.d_amp_embedding, dim=0, index=entity)
         d_frq = torch.index_select(self.d_frq_embedding, dim=0, index=entity)
         d_phi = torch.index_select(self.d_phi_embedding, dim=0, index=entity)
 
-        h_amp = torch.index_select(self.h_amp_embedding, dim=0, index=entity)
-        h_frq = torch.index_select(self.h_frq_embedding, dim=0, index=entity)
-        h_phi = torch.index_select(self.h_phi_embedding, dim=0, index=entity)
-
+        m = m_amp * torch.sin(month * m_frq + m_phi)
         d = d_amp * torch.sin(day * d_frq + d_phi)
-        h = h_amp * torch.sin(hour * h_frq + h_phi)
 
-        return d + h
+        return m + d
 
     def forward(self, sample, mode='single'):
         '''
@@ -147,8 +147,8 @@ class KGEModel(nn.Module):
         if mode == 'single':
             batch_size, negative_sample_size = sample.size(0), 1
 
-            day = sample[:, 3]
-            hour = sample[:, 4]
+            month = sample[:, 3]
+            day = sample[:, 4]
 
             head = torch.index_select(
                 self.entity_embedding,
@@ -156,7 +156,7 @@ class KGEModel(nn.Module):
                 index=sample[:, 0]
             ).unsqueeze(1)
 
-            head_time = self.time_embedding(sample[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+            head_time = self.time_embedding(sample[:, 0], month.view(-1, 1), day.view(-1, 1)).unsqueeze(1)
 
             true_head = None
             head_time_neg = None
@@ -173,7 +173,7 @@ class KGEModel(nn.Module):
                 index=sample[:, 2]
             ).unsqueeze(1)
 
-            tail_time = self.time_embedding(sample[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+            tail_time = self.time_embedding(sample[:, 2], month.view(-1, 1), day.view(-1, 1)).unsqueeze(1)
 
             true_tail = None
             tail_time_neg = None
@@ -183,8 +183,8 @@ class KGEModel(nn.Module):
             batch_size, negative_sample_size = head_part.size(0), head_part.size(1)
             negative_time_sample_size = time_part.size(1)
 
-            day = tail_part[:, 3]
-            hour = tail_part[:, 4]
+            month = tail_part[:, 3]
+            day = tail_part[:, 4]
 
             if negative_sample_size != 0:
                 head = torch.index_select(
@@ -195,8 +195,8 @@ class KGEModel(nn.Module):
 
                 head_time = self.time_embedding(
                     head_part.view(-1),
-                    day.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1),
-                    hour.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1)
+                    month.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1),
+                    day.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1)
                 ).view(batch_size, negative_sample_size, -1)
             else:
                 head = None
@@ -230,7 +230,7 @@ class KGEModel(nn.Module):
                 index=tail_part[:, 2]
             ).unsqueeze(1)
 
-            tail_time = self.time_embedding(tail_part[:, 2], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+            tail_time = self.time_embedding(tail_part[:, 2], month.view(-1, 1), day.view(-1, 1)).unsqueeze(1)
 
             true_tail = None
 
@@ -248,8 +248,8 @@ class KGEModel(nn.Module):
             batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
             negative_time_sample_size = time_part.size(1)
 
-            day = head_part[:, 3]
-            hour = head_part[:, 4]
+            month = head_part[:, 3]
+            day = head_part[:, 4]
 
             head = torch.index_select(
                 self.entity_embedding,
@@ -257,7 +257,7 @@ class KGEModel(nn.Module):
                 index=head_part[:, 0]
             ).unsqueeze(1)
 
-            head_time = self.time_embedding(head_part[:, 0], day.view(-1, 1), hour.view(-1, 1)).unsqueeze(1)
+            head_time = self.time_embedding(head_part[:, 0], month.view(-1, 1), day.view(-1, 1)).unsqueeze(1)
 
             true_head = None
 
@@ -285,8 +285,8 @@ class KGEModel(nn.Module):
 
                 tail_time = self.time_embedding(
                     tail_part.view(-1),
-                    day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1),
-                    hour.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
+                    month.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1),
+                    day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
                 ).view(batch_size, negative_sample_size, -1)
             else:
                 tail = None
@@ -751,7 +751,7 @@ class KGEModel(nn.Module):
                             positive_arg = positive_sample[:, 2]
                             positive_issue_idx = positive_sample[:, 0]
                         elif mode == 'time':
-                            positive_arg = (positive_sample[:, 3] - 1) * 24 + positive_sample[:, 4]
+                            positive_arg = (positive_sample[:, 3] - 1) * 31 + (positive_sample[:, 4] - 1)
                         else:
                             raise ValueError('mode %s not supported' % mode)
 

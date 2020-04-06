@@ -143,7 +143,7 @@ def read_quadruple(file_path, entity2id, relation2id):
         for line in fin:
             h, r, t, ts = line.strip().split('\t')
             ts = datetime.fromtimestamp(int(ts))
-            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.day, ts.hour))
+            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.month, ts.day))
     return quadruples
 
 

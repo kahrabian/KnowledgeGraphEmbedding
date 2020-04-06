@@ -33,7 +33,7 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         positive_sample = self.quadruples[idx]
 
-        head, relation, tail, day, hour = positive_sample
+        head, relation, tail, month, day = positive_sample
 
         subsampling_weight = self.count[(head, relation)] + self.count[(tail, -relation-1)]
         subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
@@ -79,11 +79,11 @@ class TrainDataset(Dataset):
         negative_time_sample_size = 0
 
         while negative_time_sample_size < self.negative_time_sample_size:
+            negative_time_sample_month = np.random.randint(1, 13, size=self.negative_time_sample_size*2)
             negative_time_sample_day = np.random.randint(1, 32, size=self.negative_time_sample_size*2)
-            negative_time_sample_hour = np.random.randint(24, size=self.negative_time_sample_size*2)
-            negative_time_sample = np.stack([negative_time_sample_day, negative_time_sample_hour], axis=1)
+            negative_time_sample = np.stack([negative_time_sample_month, negative_time_sample_day], axis=1)
 
-            mask = (negative_time_sample[:, 0] != day) | (negative_time_sample[:, 1] != hour)
+            mask = (negative_time_sample[:, 0] != month) | (negative_time_sample[:, 1] != day)
 
             negative_time_sample = negative_time_sample[mask]
             negative_time_sample_list.append(negative_time_sample)
@@ -168,25 +168,25 @@ class TestDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        head, relation, tail, day, hour = self.quadruples[idx]
+        head, relation, tail, month, day = self.quadruples[idx]
 
         if self.mode == 'head-batch':
-            tmp = [(0, rand_head) if (rand_head, relation, tail, day, hour) not in self.quadruple_set
+            tmp = [(0, rand_head) if (rand_head, relation, tail, month, day) not in self.quadruple_set
                    else (-1, head) for rand_head in range(self.nentity)]
             tmp[head] = (0, head)
         elif self.mode == 'tail-batch':
-            tmp = [(0, rand_tail) if (head, relation, rand_tail, day, hour) not in self.quadruple_set
+            tmp = [(0, rand_tail) if (head, relation, rand_tail, month, day) not in self.quadruple_set
                    else (-1, tail) for rand_tail in range(self.nentity)]
             tmp[tail] = (0, tail)
         elif self.mode == 'time':
             tmp = []
-            for rand_day in range(1, 32):
-                for rand_hour in range(24):
-                    if (head, relation, tail, rand_day, rand_hour) not in self.quadruple_set:
-                        tmp.append((0, rand_day, rand_hour))
+            for rand_month in range(1, 13):
+                for rand_day in range(1, 32):
+                    if (head, relation, tail, rand_month, rand_day) not in self.quadruple_set:
+                        tmp.append((0, rand_month, rand_day))
                     else:
-                        tmp.append((-1, day, hour))
-            tmp[(day - 1) * 24 + hour] = (0, day, hour)
+                        tmp.append((-1, month, day))
+            tmp[(month - 1) * 31 + (day - 1)] = (0, month, day)
         else:
             raise ValueError('negative batch mode %s not supported' % self.mode)
 
@@ -199,7 +199,7 @@ class TestDataset(Dataset):
             negative_sample = torch.from_numpy(np.array([]))
             negative_time_sample = tmp[:, 1:3]
 
-        positive_sample = torch.LongTensor((head, relation, tail, day, hour))
+        positive_sample = torch.LongTensor((head, relation, tail, month, day))
 
         return positive_sample, negative_sample, negative_time_sample, filter_bias, self.mode
 
