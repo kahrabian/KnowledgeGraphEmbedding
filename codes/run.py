@@ -133,34 +133,16 @@ def save_model(model, optimizer, save_variable_list, args):
         relation_embedding
     )
 
-    m_frq_embedding = model.m_frq_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, 'm_frq_embedding'),
-        m_frq_embedding
-    )
-
     d_frq_embedding = model.d_frq_embedding.detach().cpu().numpy()
     np.save(
         os.path.join(args.save_path, 'd_frq_embedding'),
         d_frq_embedding
     )
 
-    m_phi_embedding = model.m_phi_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, 'm_phi_embedding'),
-        m_phi_embedding
-    )
-
     d_phi_embedding = model.d_phi_embedding.detach().cpu().numpy()
     np.save(
         os.path.join(args.save_path, 'd_phi_embedding'),
         d_phi_embedding
-    )
-
-    m_amp_embedding = model.m_amp_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, 'm_amp_embedding'),
-        m_amp_embedding
     )
 
     d_amp_embedding = model.d_amp_embedding.detach().cpu().numpy()
@@ -179,7 +161,7 @@ def read_quadruple(file_path, entity2id, relation2id):
         for line in fin:
             h, r, t, ts = line.strip().split('\t')
             ts = datetime.fromtimestamp(int(ts))
-            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.month, ts.day))
+            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.day))
     return quadruples
 
 

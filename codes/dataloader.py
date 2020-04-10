@@ -33,7 +33,7 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         positive_sample = self.quadruples[idx]
 
-        head, relation, tail, month, day = positive_sample
+        head, relation, tail, day = positive_sample
 
         subsampling_weight = self.count[(head, relation)] + self.count[(tail, -relation-1)]
         subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
@@ -79,11 +79,9 @@ class TrainDataset(Dataset):
         negative_time_sample_size = 0
 
         while negative_time_sample_size < self.negative_time_sample_size:
-            negative_time_sample_month = np.random.randint(1, 13, size=self.negative_time_sample_size*2)
-            negative_time_sample_day = np.random.randint(1, 32, size=self.negative_time_sample_size*2)
-            negative_time_sample = np.stack([negative_time_sample_month, negative_time_sample_day], axis=1)
+            negative_time_sample = np.random.randint(1, 26, size=self.negative_time_sample_size*2)
 
-            mask = (negative_time_sample[:, 0] != month) | (negative_time_sample[:, 1] != day)
+            mask = negative_time_sample != day
 
             negative_time_sample = negative_time_sample[mask]
             negative_time_sample_list.append(negative_time_sample)
@@ -117,7 +115,7 @@ class TrainDataset(Dataset):
         The frequency will be used for subsampling like word2vec
         '''
         count = {}
-        for head, relation, tail, _, _ in quadruples:
+        for head, relation, tail, _ in quadruples:
             if (head, relation) not in count:
                 count[(head, relation)] = start
             else:
@@ -139,7 +137,7 @@ class TrainDataset(Dataset):
         true_head = {}
         true_tail = {}
 
-        for head, relation, tail, _, _ in quadruples:
+        for head, relation, tail, _ in quadruples:
             if (head, relation) not in true_tail:
                 true_tail[(head, relation)] = []
             true_tail[(head, relation)].append(tail)
@@ -168,25 +166,20 @@ class TestDataset(Dataset):
         return self.len
 
     def __getitem__(self, idx):
-        head, relation, tail, month, day = self.quadruples[idx]
+        head, relation, tail, day = self.quadruples[idx]
 
         if self.mode == 'head-batch':
-            tmp = [(0, rand_head) if (rand_head, relation, tail, month, day) not in self.quadruple_set
+            tmp = [(0, rand_head) if (rand_head, relation, tail, day) not in self.quadruple_set
                    else (-1, head) for rand_head in range(self.nentity)]
             tmp[head] = (0, head)
         elif self.mode == 'tail-batch':
-            tmp = [(0, rand_tail) if (head, relation, rand_tail, month, day) not in self.quadruple_set
+            tmp = [(0, rand_tail) if (head, relation, rand_tail, day) not in self.quadruple_set
                    else (-1, tail) for rand_tail in range(self.nentity)]
             tmp[tail] = (0, tail)
         elif self.mode == 'time':
-            tmp = []
-            for rand_month in range(1, 13):
-                for rand_day in range(1, 32):
-                    if (head, relation, tail, rand_month, rand_day) not in self.quadruple_set:
-                        tmp.append((0, rand_month, rand_day))
-                    else:
-                        tmp.append((-1, month, day))
-            tmp[(month - 1) * 31 + (day - 1)] = (0, month, day)
+            tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
+                   else (-1, day) for rand_day in range(26, 32)]
+            tmp[day - 26] = (0, day)
         else:
             raise ValueError('negative batch mode %s not supported' % self.mode)
 
@@ -194,12 +187,12 @@ class TestDataset(Dataset):
         filter_bias = tmp[:, 0].float()
         if self.mode != 'time':
             negative_sample = tmp[:, 1]
-            negative_time_sample = torch.from_numpy(np.array([]))
+            negative_time_sample = torch.from_numpy(np.array([], dtype=np.int64))
         else:
-            negative_sample = torch.from_numpy(np.array([]))
+            negative_sample = torch.from_numpy(np.array([], dtype=np.int64))
             negative_time_sample = tmp[:, 1:3]
 
-        positive_sample = torch.LongTensor((head, relation, tail, month, day))
+        positive_sample = torch.LongTensor((head, relation, tail, day))
 
         return positive_sample, negative_sample, negative_time_sample, filter_bias, self.mode
 
