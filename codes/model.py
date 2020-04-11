@@ -673,6 +673,7 @@ class KGEModel(nn.Module):
                                 'MRR': 1.0/ranking,
                                 'MR': float(ranking),
                                 'HITS@1': 1.0 if ranking <= 1 else 0.0,
+                                'HITS@2': 1.0 if ranking <= 2 else 0.0,  # NOTE: Time Query
                                 'HITS@3': 1.0 if ranking <= 3 else 0.0,
                                 'HITS@10': 1.0 if ranking <= 10 else 0.0,
                             })
