@@ -20,8 +20,9 @@ from dataloader import TestDataset
 
 
 class KGEModel(nn.Module):
-    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, gamma, epsilon,
-                 double_entity_embedding=False, double_relation_embedding=False, double_time_embedding=False,
+    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, relative_hidden_dim,
+                 gamma, epsilon, double_entity_embedding=False, double_relation_embedding=False,
+                 double_time_embedding=False, double_relative_embedding=False,
                  type_index=None, type_reverse_index=None, issue_users_idx=None):
         super(KGEModel, self).__init__()
         self.model_name = model_name
@@ -42,9 +43,13 @@ class KGEModel(nn.Module):
         self.entity_dim = hidden_dim*2 if double_entity_embedding else hidden_dim
         self.relation_dim = hidden_dim*2 if double_relation_embedding else hidden_dim
         self.time_dim = time_hidden_dim*2 if double_time_embedding else time_hidden_dim
+        self.relative_dim = relative_hidden_dim*2 if double_relative_embedding else relative_hidden_dim
 
         self.relation_dim += (self.time_dim // 2) if double_entity_embedding and \
             not double_relation_embedding else self.time_dim
+
+        self.relation_dim += (self.relative_dim // 2) if double_entity_embedding and \
+            not double_relation_embedding else self.relative_dim
 
         self.embedding_range = nn.Parameter(
             torch.Tensor([(self.gamma.item() + self.epsilon) / self.relation_dim]),
@@ -86,6 +91,13 @@ class KGEModel(nn.Module):
             b=self.embedding_range.item()
         )
 
+        self.relative_embedding = nn.Parameter(torch.zeros(30, self.relative_dim))
+        nn.init.uniform_(
+            tensor=self.relative_embedding,
+            a=-self.embedding_range.item(),
+            b=self.embedding_range.item()
+        )
+
         if model_name == 'pRotatE':
             self.modulus = nn.Parameter(torch.Tensor([[0.5 * self.embedding_range.item()]]))
 
@@ -106,6 +118,15 @@ class KGEModel(nn.Module):
         d_frq = torch.index_select(self.d_frq_embedding, dim=0, index=entity)
         d_phi = torch.index_select(self.d_phi_embedding, dim=0, index=entity)
         return d_amp * torch.sin(day * d_frq + d_phi)
+
+    def merge_time_embedding(self, absoulte, relative):
+        re_absoulte, im_absoulte = torch.chunk(absoulte, 2, dim=2)
+        re_relative, im_relative = torch.chunk(relative, 2, dim=2)
+
+        re_time = torch.cat([re_absoulte, re_relative], dim=2)
+        im_time = torch.cat([im_absoulte, im_relative], dim=2)
+
+        return torch.cat([re_time, im_time], dim=2)
 
     def forward(self, sample, mode='single'):
         '''
@@ -129,7 +150,15 @@ class KGEModel(nn.Module):
                 index=sample[:, 0]
             ).unsqueeze(1)
 
-            head_time = self.time_embedding(sample[:, 0], day.view(-1, 1)).unsqueeze(1)
+            head_absolute = self.time_embedding(sample[:, 0], day.view(-1, 1)).unsqueeze(1)
+
+            head_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=sample[:, 4]
+            ).unsqueeze(1)
+
+            head_time = self.merge_time_embedding(head_absolute, head_relative)
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -143,12 +172,20 @@ class KGEModel(nn.Module):
                 index=sample[:, 2]
             ).unsqueeze(1)
 
-            tail_time = self.time_embedding(sample[:, 2], day.view(-1, 1)).unsqueeze(1)
+            tail_absolute = self.time_embedding(sample[:, 2], day.view(-1, 1)).unsqueeze(1)
+
+            tail_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=sample[:, 5]
+            ).unsqueeze(1)
+
+            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
 
             time_neg = None
 
         elif mode == 'head-batch':
-            tail_part, head_part, time_part = sample
+            tail_part, head_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
             batch_size, negative_sample_size = head_part.size(0), head_part.size(1)
             negative_time_sample_size = time_part.size(1)
 
@@ -160,10 +197,18 @@ class KGEModel(nn.Module):
                 index=head_part.view(-1)
             ).view(batch_size, negative_sample_size, -1)
 
-            head_time = self.time_embedding(
+            head_absolute = self.time_embedding(
                 head_part.view(-1),
                 day.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1)
             ).view(batch_size, negative_sample_size, -1)
+
+            head_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=relative_part.view(-1)
+            ).view(batch_size, negative_sample_size, -1)
+
+            head_time = self.merge_time_embedding(head_absolute, head_relative)
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -177,7 +222,15 @@ class KGEModel(nn.Module):
                 index=tail_part[:, 2]
             ).unsqueeze(1)
 
-            tail_time = self.time_embedding(tail_part[:, 2], day.view(-1, 1)).unsqueeze(1)
+            tail_absolute = self.time_embedding(tail_part[:, 2], day.view(-1, 1)).unsqueeze(1)
+
+            tail_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=tail_part[:, 5]
+            ).unsqueeze(1)
+
+            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
 
             true_head = torch.index_select(
                 self.entity_embedding,
@@ -185,20 +238,36 @@ class KGEModel(nn.Module):
                 index=tail_part[:, 0]
             ).unsqueeze(1)
 
-            head_time_neg = self.time_embedding(
+            head_absolute_neg = self.time_embedding(
                 tail_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
 
-            tail_time_neg = self.time_embedding(
+            head_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=head_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
+
+            tail_absolute_neg = self.time_embedding(
                 tail_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
 
+            tail_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=tail_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
+
             time_neg = (true_head, tail, head_time_neg, tail_time_neg)
 
         elif mode == 'tail-batch':
-            head_part, tail_part, time_part = sample
+            head_part, tail_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
             batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
             negative_time_sample_size = time_part.size(1)
 
@@ -210,7 +279,15 @@ class KGEModel(nn.Module):
                 index=head_part[:, 0]
             ).unsqueeze(1)
 
-            head_time = self.time_embedding(head_part[:, 0], day.view(-1, 1)).unsqueeze(1)
+            head_absolute = self.time_embedding(head_part[:, 0], day.view(-1, 1)).unsqueeze(1)
+
+            head_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=head_part[:, 4]
+            ).unsqueeze(1)
+
+            head_time = self.merge_time_embedding(head_absolute, head_relative)
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -224,10 +301,18 @@ class KGEModel(nn.Module):
                 index=tail_part.view(-1)
             ).view(batch_size, negative_sample_size, -1)
 
-            tail_time = self.time_embedding(
+            tail_absolute = self.time_embedding(
                 tail_part.view(-1),
                 day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
             ).view(batch_size, negative_sample_size, -1)
+
+            tail_relative = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=relative_part.view(-1)
+            ).view(batch_size, negative_sample_size, -1)
+
+            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
 
             true_tail = torch.index_select(
                 self.entity_embedding,
@@ -235,20 +320,36 @@ class KGEModel(nn.Module):
                 index=head_part[:, 2]
             ).unsqueeze(1)
 
-            head_time_neg = self.time_embedding(
+            head_absolute_neg = self.time_embedding(
                 head_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
 
-            tail_time_neg = self.time_embedding(
+            head_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=head_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
+
+            tail_absolute_neg = self.time_embedding(
                 head_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
 
+            tail_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=tail_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
+
             time_neg = (head, true_tail, head_time_neg, tail_time_neg)
 
         elif mode == 'time':
-            head_part, tail_part, time_part = sample
+            head_part, tail_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
             batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
             negative_time_sample_size = time_part.size(1)
 
@@ -260,7 +361,7 @@ class KGEModel(nn.Module):
                 index=head_part[:, 0]
             ).unsqueeze(1)
 
-            head_time = self.time_embedding(head_part[:, 0], day.view(-1, 1)).unsqueeze(1)
+            head_time = None
 
             relation = torch.index_select(
                 self.relation_embedding,
@@ -278,15 +379,31 @@ class KGEModel(nn.Module):
                 index=head_part[:, 2]
             ).unsqueeze(1)
 
-            head_time_neg = self.time_embedding(
+            head_absolute_neg = self.time_embedding(
                 head_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
 
-            tail_time_neg = self.time_embedding(
+            head_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=head_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
+
+            tail_absolute_neg = self.time_embedding(
                 head_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
                 time_part.view(-1, 1),
             ).view(batch_size, negative_time_sample_size, -1)
+
+            tail_relative_neg = torch.index_select(
+                self.relative_embedding,
+                dim=0,
+                index=tail_time_relative_part.view(-1)
+            ).view(batch_size, negative_time_sample_size, -1)
+
+            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
 
             time_neg = (head, true_tail, head_time_neg, tail_time_neg)
 
@@ -478,15 +595,22 @@ class KGEModel(nn.Module):
 
         optimizer.zero_grad()
 
-        positive_sample, negative_sample, negative_time_sample, subsampling_weight, mode = next(train_iterator)
+        positive_sample, negative_sample, negative_time_sample, \
+            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
+            subsampling_weight, mode = next(train_iterator)
 
         if args.cuda:
             positive_sample = positive_sample.cuda()
             negative_sample = negative_sample.cuda()
             negative_time_sample = negative_time_sample.cuda()
+            negative_sample_relative = negative_sample_relative.cuda()
+            negative_time_sample_head_relative = negative_time_sample_head_relative.cuda()
+            negative_time_sample_tail_relative = negative_time_sample_tail_relative.cuda()
             subsampling_weight = subsampling_weight.cuda()
 
-        negative_score = model((positive_sample, negative_sample, negative_time_sample), mode=mode)
+        negative_score = model(
+            (positive_sample, negative_sample, negative_time_sample,
+             negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative), mode)
 
         if args.negative_adversarial_sampling:
             # In self-adversarial sampling, we do not apply back-propagation on the sampling weight
@@ -533,7 +657,7 @@ class KGEModel(nn.Module):
         return log
 
     @staticmethod
-    def test_step(model, test_quadruples, all_true_quadruples, args):
+    def test_step(model, test_quadruples, all_true_quadruples, event_index, args):
         '''
         Evaluate the model on test or valid datasets
         '''
@@ -574,6 +698,7 @@ class KGEModel(nn.Module):
                         all_true_quadruples,
                         args.nentity,
                         args.nrelation,
+                        event_index,
                         'head-batch'
                     ),
                     batch_size=args.test_batch_size,
@@ -587,6 +712,7 @@ class KGEModel(nn.Module):
                         all_true_quadruples,
                         args.nentity,
                         args.nrelation,
+                        event_index,
                         'tail-batch'
                     ),
                     batch_size=args.test_batch_size,
@@ -606,6 +732,7 @@ class KGEModel(nn.Module):
                         all_true_quadruples,
                         args.nentity,
                         args.nrelation,
+                        event_index,
                         'time'
                     ),
                     batch_size=args.test_batch_size,
@@ -621,16 +748,23 @@ class KGEModel(nn.Module):
 
             with torch.no_grad():
                 for test_dataset in test_dataset_list:
-                    for positive_sample, negative_sample, negative_time_sample, filter_bias, mode in test_dataset:
+                    for positive_sample, negative_sample, negative_time_sample, negative_sample_relative, \
+                        negative_time_sample_head_relative, negative_time_sample_tail_relative, filter_bias, mode \
+                            in test_dataset:
                         if args.cuda:
                             positive_sample = positive_sample.cuda()
                             negative_sample = negative_sample.cuda()
                             negative_time_sample = negative_time_sample.cuda()
+                            negative_sample_relative = negative_sample_relative.cuda()
+                            negative_time_sample_head_relative = negative_time_sample_head_relative.cuda()
+                            negative_time_sample_tail_relative = negative_time_sample_tail_relative.cuda()
                             filter_bias = filter_bias.cuda()
 
                         batch_size = positive_sample.size(0)
 
-                        score = model((positive_sample, negative_sample, negative_time_sample), mode)
+                        score = model(
+                            (positive_sample, negative_sample, negative_time_sample, negative_sample_relative,
+                             negative_time_sample_head_relative, negative_time_sample_tail_relative), mode)
                         score += filter_bias
 
                         # Explicitly sort all the entities to ensure that there is no test exposure bias

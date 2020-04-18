@@ -16,6 +16,7 @@ import pandas as pd
 import torch
 
 from itertools import chain
+from collections import defaultdict
 from datetime import datetime
 from torch.utils.data import DataLoader
 
@@ -47,11 +48,13 @@ def parse_args(args=None):
     parser.add_argument('-de', '--double_entity_embedding', action='store_true')
     parser.add_argument('-dr', '--double_relation_embedding', action='store_true')
     parser.add_argument('-dt', '--double_time_embedding', action='store_true')
+    parser.add_argument('-drt', '--double_relative_embedding', action='store_true')
 
     parser.add_argument('-n', '--negative_sample_size', default=128, type=int)
     parser.add_argument('-nt', '--negative_time_sample_size', default=0, type=int)
     parser.add_argument('-d', '--hidden_dim', default=500, type=int)
     parser.add_argument('-td', '--time_hidden_dim', default=100, type=int)
+    parser.add_argument('-rd', '--relative_hidden_dim', default=100, type=int)
     parser.add_argument('-g', '--gamma', default=12.0, type=float)
     parser.add_argument('-e', '--epsilon', default=2.0, type=float)
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
@@ -100,6 +103,8 @@ def override_config(args):
     args.model = argparse_dict['model']
     args.double_entity_embedding = argparse_dict['double_entity_embedding']
     args.double_relation_embedding = argparse_dict['double_relation_embedding']
+    args.double_time_embedding = argparse_dict['double_time_embedding']
+    args.double_relative_embedding = argparse_dict['double_relative_embedding']
     args.hidden_dim = argparse_dict['hidden_dim']
     args.test_batch_size = argparse_dict['test_batch_size']
 
@@ -160,8 +165,7 @@ def read_quadruple(file_path, entity2id, relation2id):
     with open(file_path) as fin:
         for line in fin:
             h, r, t, ts = line.strip().split('\t')
-            ts = datetime.fromtimestamp(int(ts))
-            quadruples.append((entity2id[h], relation2id[r], entity2id[t], ts.day))
+            quadruples.append((entity2id[h], relation2id[r], entity2id[t], int(ts)))
     return quadruples
 
 
@@ -304,17 +308,27 @@ def main(args):
             issue_users['users'] = issue_users.users.apply(lambda x: [int(re_ix[y]) for y in x])
             issue_users_idx = issue_users.set_index('issue').to_dict()['users']
 
+    event_index = defaultdict(list)
+    for h, r, t, ts in train_quadruples:
+        event_index[h].append(ts)
+        event_index[t].append(ts)
+
+    for k in event_index:
+        event_index[k] = list(set(event_index[k]))
+
     kge_model = KGEModel(
         model_name=args.model,
         nentity=nentity,
         nrelation=nrelation,
         hidden_dim=args.hidden_dim,
         time_hidden_dim=args.time_hidden_dim,
+        relative_hidden_dim=args.relative_hidden_dim,
         gamma=args.gamma,
         epsilon=args.epsilon,
         double_entity_embedding=args.double_entity_embedding,
         double_relation_embedding=args.double_relation_embedding,
         double_time_embedding=args.double_time_embedding,
+        double_relative_embedding=args.double_relative_embedding,
         type_index=type_index,
         type_reverse_index=type_reverse_index,
         issue_users_idx=issue_users_idx
@@ -338,6 +352,7 @@ def main(args):
                          'head-batch',
                          type_index,
                          type_reverse_index,
+                         event_index,
                          args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
@@ -354,6 +369,7 @@ def main(args):
                          'tail-batch',
                          type_index,
                          type_reverse_index,
+                         event_index,
                          args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
@@ -440,7 +456,7 @@ def main(args):
 
             if args.do_valid and step % args.valid_steps == 0:
                 logging.info('Evaluating on Valid Dataset...')
-                metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, args)
+                metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, event_index, args)
                 log_metrics('Valid', step, metrics)
 
         save_variable_list = {
@@ -452,17 +468,17 @@ def main(args):
 
     if args.do_valid:
         logging.info('Evaluating on Valid Dataset...')
-        metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, args)
+        metrics = kge_model.test_step(kge_model, valid_quadruples, all_true_quadruples, event_index, args)
         log_metrics('Valid', step, metrics)
 
     if args.do_test:
         logging.info('Evaluating on Test Dataset...')
-        metrics = kge_model.test_step(kge_model, test_quadruples, all_true_quadruples, args)
+        metrics = kge_model.test_step(kge_model, test_quadruples, all_true_quadruples, event_index, args)
         log_metrics('Test', step, metrics)
 
     if args.evaluate_train:
         logging.info('Evaluating on Training Dataset...')
-        metrics = kge_model.test_step(kge_model, train_quadruples, all_true_quadruples, args)
+        metrics = kge_model.test_step(kge_model, train_quadruples, all_true_quadruples, event_index, args)
         log_metrics('Test', step, metrics)
 
 

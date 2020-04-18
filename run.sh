@@ -31,6 +31,8 @@ EVAL_MODE=${15}
 TIME_HIDDEN_DIM=${16}
 NEGATIVE_TIM_SAMPLE_SIZE=${17}
 
+RELATIVE_HIDDEN_DIM=${18}
+
 if [ $MODE == "train" ]
 then
 
@@ -47,8 +49,8 @@ CUDA_VISIBLE_DEVICES=$GPU_DEVICE python -u $CODE_PATH/run.py --do_train \
     -lr $LEARNING_RATE --max_steps $MAX_STEPS \
     -save $SAVE --test_batch_size $TEST_BATCH_SIZE \
     --eval_mode $EVAL_MODE --time_hidden_dim $TIME_HIDDEN_DIM \
-    -nt $NEGATIVE_TIM_SAMPLE_SIZE \
-    ${18} ${19} ${20} ${21} ${22} ${23}
+    -nt $NEGATIVE_TIM_SAMPLE_SIZE --relative_hidden_dim $RELATIVE_HIDDEN_DIM \
+    ${19} ${20} ${21} ${22} ${23} ${24} ${25}
 
 elif [ $MODE == "valid" ]
 then
