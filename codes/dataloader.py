@@ -236,7 +236,6 @@ class TestDataset(Dataset):
         elif self.mode == 'time':
             tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
                    else (-1, day) for rand_day in range(26, 29)]
-            print(day)
             tmp[day - 26] = (0, day)
         else:
             raise ValueError('negative batch mode %s not supported' % self.mode)
