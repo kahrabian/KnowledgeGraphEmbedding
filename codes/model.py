@@ -73,15 +73,15 @@ class KGEModel(nn.Module):
         self.d_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
             tensor=self.d_frq_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
+            a=np.pi / 7,
+            b=2 * np.pi / 3
         )
 
         self.d_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
         nn.init.uniform_(
             tensor=self.d_phi_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
+            a=-np.pi,
+            b=np.pi
         )
 
         self.d_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))

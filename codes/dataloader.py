@@ -36,8 +36,10 @@ class TrainDataset(Dataset):
     def __len__(self):
         return self.len
 
-    def lt(self, entity, timestamp):
-        timestamp -= np.random.randint(1, 4) * self._day  # NOTE: Make a gap to mimic the test queries
+    def lt(self, entity, timestamp, time_gap=None):
+        if time_gap is None:
+            time_gap = np.random.randint(1, 4)  # NOTE: Make a time gap to mimic the test queries
+        timestamp -= time_gap * self._day
         relative_time_index = bisect.bisect_left(self.event_index[entity], timestamp)
         if relative_time_index != 0:
             return (timestamp - self.event_index[entity][relative_time_index - 1]) // self._day + 1
@@ -47,8 +49,10 @@ class TrainDataset(Dataset):
         head, relation, tail, timestamp = self.quadruples[idx]
 
         day = datetime.fromtimestamp(timestamp).day
-        head_relative = self.lt(head, timestamp)
-        tail_relative = self.lt(tail, timestamp)
+
+        time_gap = np.random.randint(1, 4)
+        head_relative = self.lt(head, timestamp, time_gap=time_gap)
+        tail_relative = self.lt(tail, timestamp, time_gap=time_gap)
 
         subsampling_weight = self.count[(head, relation)] + self.count[(tail, -relation-1)]
         subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
@@ -203,8 +207,10 @@ class TestDataset(Dataset):
     def __len__(self):
         return self.len
 
-    def lt(self, entity, timestamp):
-        timestamp -= np.random.randint(1, 4) * self._day  # NOTE: Make a gap to mimic the test queries
+    def lt(self, entity, timestamp, time_gap=None):
+        if time_gap is None:
+            time_gap = np.random.randint(1, 4)  # NOTE: Make a time gap to mimic the test queries
+        timestamp -= time_gap * self._day
         relative_time_index = bisect.bisect_left(self.event_index[entity], timestamp)
         if relative_time_index != 0:
             return (timestamp - self.event_index[entity][relative_time_index - 1]) // self._day + 1
@@ -214,8 +220,10 @@ class TestDataset(Dataset):
         head, relation, tail, timestamp = self.quadruples[idx]
 
         day = datetime.fromtimestamp(timestamp).day
-        head_relative = self.lt(head, timestamp)
-        tail_relative = self.lt(tail, timestamp)
+
+        time_gap = np.random.randint(1, 4)
+        head_relative = self.lt(head, timestamp, time_gap=time_gap)
+        tail_relative = self.lt(tail, timestamp, time_gap=time_gap)
 
         if self.mode == 'head-batch':
             tmp = [(0, rand_head) if (rand_head, relation, tail, day) not in self.quadruple_set
@@ -228,6 +236,7 @@ class TestDataset(Dataset):
         elif self.mode == 'time':
             tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
                    else (-1, day) for rand_day in range(26, 29)]
+            print(day)
             tmp[day - 26] = (0, day)
         else:
             raise ValueError('negative batch mode %s not supported' % self.mode)

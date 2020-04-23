@@ -308,13 +308,16 @@ def main(args):
             issue_users['users'] = issue_users.users.apply(lambda x: [int(re_ix[y]) for y in x])
             issue_users_idx = issue_users.set_index('issue').to_dict()['users']
 
-    event_index = defaultdict(list)
+    mixed_event_index = defaultdict(list)
     for h, r, t, ts in train_quadruples:
-        event_index[h].append(ts)
-        event_index[t].append(ts)
+        mixed_event_index[h].append((ts, r))
+        mixed_event_index[t].append((ts, r))
 
-    for k in event_index:
-        event_index[k] = list(set(event_index[k]))
+    event_index = defaultdict(list)
+    for k in mixed_event_index:
+        sorted_events = sorted(set(mixed_event_index[k]))
+        event_index[k] = list(map(lambda x: x[0], sorted_events))
+        event_index[-k - 1] = list(map(lambda x: x[1], sorted_events))
 
     kge_model = KGEModel(
         model_name=args.model,
