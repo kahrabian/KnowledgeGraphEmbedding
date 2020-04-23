@@ -5,6 +5,7 @@ from __future__ import division
 from __future__ import print_function
 
 import bisect
+import pytz
 from datetime import datetime
 
 import numpy as np
@@ -48,7 +49,7 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         head, relation, tail, timestamp = self.quadruples[idx]
 
-        day = datetime.fromtimestamp(timestamp).day
+        day = datetime.fromtimestamp(timestamp, pytz.timezone('America/Montreal')).day
 
         time_gap = np.random.randint(1, 4)
         head_relative = self.lt(head, timestamp, time_gap=time_gap)
@@ -219,7 +220,7 @@ class TestDataset(Dataset):
     def __getitem__(self, idx):
         head, relation, tail, timestamp = self.quadruples[idx]
 
-        day = datetime.fromtimestamp(timestamp).day
+        day = datetime.fromtimestamp(timestamp, pytz.timezone('America/Montreal')).day
 
         time_gap = np.random.randint(1, 4)
         head_relative = self.lt(head, timestamp, time_gap=time_gap)
