@@ -777,7 +777,7 @@ class KGEModel(nn.Module):
                             positive_arg = positive_sample[:, 2]
                             positive_issue_idx = positive_sample[:, 0]
                         elif mode == 'time':
-                            positive_arg = positive_sample[:, 3] - 26
+                            positive_arg = positive_sample[:, 3] - test_dataset.dataset.min_day
                         else:
                             raise ValueError('mode %s not supported' % mode)
 

@@ -34,6 +34,10 @@ class TrainDataset(Dataset):
         self.event_index = event_index
         self.eval_only = eval_only
 
+        self.tz = pytz.timezone('America/Montreal')
+        self.min_day = min(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+        self.max_day = max(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+
     def __len__(self):
         return self.len
 
@@ -49,7 +53,7 @@ class TrainDataset(Dataset):
     def __getitem__(self, idx):
         head, relation, tail, timestamp = self.quadruples[idx]
 
-        day = datetime.fromtimestamp(timestamp, pytz.timezone('America/Montreal')).day
+        day = datetime.fromtimestamp(timestamp, self.tz).day
 
         time_gap = np.random.randint(1, 4)
         head_relative = self.lt(head, timestamp, time_gap=time_gap)
@@ -102,7 +106,8 @@ class TrainDataset(Dataset):
         negative_time_sample_size = 0
 
         while negative_time_sample_size < self.negative_time_sample_size:
-            negative_time_sample = np.random.randint(1, 26, size=self.negative_time_sample_size*2)
+            negative_time_sample = np.random.randint(
+                self.min_day, self.max_day + 1, size=self.negative_time_sample_size*2)
 
             mask = negative_time_sample != day
 
@@ -205,6 +210,10 @@ class TestDataset(Dataset):
         self.event_index = event_index
         self.mode = mode
 
+        self.tz = pytz.timezone('America/Montreal')
+        self.min_day = min(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+        self.max_day = max(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+
     def __len__(self):
         return self.len
 
@@ -220,7 +229,7 @@ class TestDataset(Dataset):
     def __getitem__(self, idx):
         head, relation, tail, timestamp = self.quadruples[idx]
 
-        day = datetime.fromtimestamp(timestamp, pytz.timezone('America/Montreal')).day
+        day = datetime.fromtimestamp(timestamp, self.tz).day
 
         time_gap = np.random.randint(1, 4)
         head_relative = self.lt(head, timestamp, time_gap=time_gap)
@@ -236,8 +245,8 @@ class TestDataset(Dataset):
             tmp[tail] = (0, tail)
         elif self.mode == 'time':
             tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
-                   else (-1, day) for rand_day in range(26, 29)]
-            tmp[day - 26] = (0, day)
+                   else (-1, day) for rand_day in range(self.min_day, self.max_day + 1)]
+            tmp[day - self.min_day] = (0, day)
         else:
             raise ValueError('negative batch mode %s not supported' % self.mode)
 
