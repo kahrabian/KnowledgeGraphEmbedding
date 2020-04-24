@@ -96,11 +96,11 @@ class TrainDataset(Dataset):
 
         if len(negative_sample_list) != 0:
             negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
+            negative_sample_relative = np.apply_along_axis(
+                lambda x: self.lt(x[0], timestamp), 0, negative_sample.reshape(1, -1))
         else:
-            negative_sample = np.array([])
-
-        negative_sample_relative = np.apply_along_axis(
-            lambda x: self.lt(x[0], timestamp), 0, negative_sample.reshape(1, -1))
+            negative_sample = np.array([], dtype=np.int64)
+            negative_sample_relative = np.array([], dtype=np.int64)
 
         negative_time_sample_list = []
         negative_time_sample_size = 0
@@ -117,14 +117,14 @@ class TrainDataset(Dataset):
 
         if len(negative_time_sample_list) != 0:
             negative_time_sample = np.concatenate(negative_time_sample_list)[:self.negative_time_sample_size]
+            negative_time_sample_head_relative = np.apply_along_axis(
+                lambda x: self.lt(head, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
+            negative_time_sample_tail_relative = np.apply_along_axis(
+                lambda x: self.lt(tail, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
         else:
-            negative_time_sample = np.array([])
-
-        negative_time_sample_head_relative = np.apply_along_axis(
-            lambda x: self.lt(head, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
-
-        negative_time_sample_tail_relative = np.apply_along_axis(
-            lambda x: self.lt(tail, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
+            negative_time_sample = np.array([], dtype=np.int64)
+            negative_time_sample_head_relative = np.array([], dtype=np.int64)
+            negative_time_sample_tail_relative = np.array([], dtype=np.int64)
 
         negative_sample = torch.from_numpy(negative_sample)
         negative_sample_relative = torch.from_numpy(negative_sample_relative)
