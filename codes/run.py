@@ -264,7 +264,7 @@ def main(args):
     all_true_quadruples = train_quadruples + valid_quadruples + test_quadruples
 
     type_index, type_reverse_index = None, None
-    issue_users_idx = None
+    users_idx = None
     if args.negative_type_sampling:
         with open(os.path.join(args.data_path, 'entities.dict'), 'r') as f:
             e_ix = dict(map(lambda x: x.split(), f.read().split('\n')[:-1]))
@@ -303,10 +303,21 @@ def main(args):
             issue_repo = issue_repo.groupby('s')['o'].apply(lambda x: list(x)[0]).reset_index(name='repo')
             issue_repo = issue_repo.rename(columns={'s': 'issue'})
 
+            pr_repo = all_data[all_data['o'].str.startswith('/repo/') & all_data['s'].str.startswith('/pr/')]
+            pr_repo = pr_repo.groupby('s')['o'].apply(lambda x: list(x)[0]).reset_index(name='repo')
+            pr_repo = pr_repo.rename(columns={'s': 'pr'})
+
             issue_users = issue_repo.merge(repo_users, on='repo', how='left')[['issue', 'users']]
             issue_users['issue'] = issue_users.issue.apply(lambda x: int(re_ix[x]))
-            issue_users['users'] = issue_users.users.apply(lambda x: [int(re_ix[y]) for y in x])
+            issue_users['users'] = issue_users.users.fillna('').apply(lambda x: [int(re_ix[y]) for y in x])
             issue_users_idx = issue_users.set_index('issue').to_dict()['users']
+
+            pr_users = pr_repo.merge(repo_users, on='repo', how='left')[['pr', 'users']]
+            pr_users['pr'] = pr_users.pr.apply(lambda x: int(re_ix[x]))
+            pr_users['users'] = pr_users.users.fillna('').apply(lambda x: [int(re_ix[y]) for y in x])
+            pr_users_idx = pr_users.set_index('pr').to_dict()['users']
+
+            users_idx = {**issue_users_idx, **pr_users_idx}
 
     mixed_event_index = defaultdict(list)
     for h, r, t, ts in train_quadruples:
@@ -334,7 +345,7 @@ def main(args):
         double_relative_embedding=args.double_relative_embedding,
         type_index=type_index,
         type_reverse_index=type_reverse_index,
-        issue_users_idx=issue_users_idx
+        users_idx=users_idx
     )
 
     logging.info('Model Parameter Configuration:')

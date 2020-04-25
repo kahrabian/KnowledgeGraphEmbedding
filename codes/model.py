@@ -23,7 +23,7 @@ class KGEModel(nn.Module):
     def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, relative_hidden_dim,
                  gamma, epsilon, double_entity_embedding=False, double_relation_embedding=False,
                  double_time_embedding=False, double_relative_embedding=False,
-                 type_index=None, type_reverse_index=None, issue_users_idx=None):
+                 type_index=None, type_reverse_index=None, users_idx=None):
         super(KGEModel, self).__init__()
         self.model_name = model_name
         self.nentity = nentity
@@ -33,7 +33,7 @@ class KGEModel(nn.Module):
 
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
-        self.issue_users_idx = issue_users_idx
+        self.users_idx = users_idx
 
         self.gamma = nn.Parameter(
             torch.Tensor([gamma]),
@@ -805,10 +805,10 @@ class KGEModel(nn.Module):
 
                             if mode != 'time' and model.type_index is not None:
                                 index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
-                                if model.issue_users_idx is None:
+                                if model.users_idx is None:
                                     ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
                                 else:
-                                    issue_index = model.issue_users_idx.get(positive_issue_idx[i].item(), [])
+                                    issue_index = model.users_idx.get(positive_issue_idx[i].item(), [])
                                     issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:ranking].sum()
                                     if issue_ranking == 0:
                                         ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
