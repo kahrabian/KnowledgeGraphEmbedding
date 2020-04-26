@@ -77,6 +77,7 @@ def parse_args(args=None):
     parser.add_argument('--eval_mode', default='both', type=str, choices=['head', 'tail', 'both', 'time'])
 
     parser.add_argument('--eval_only', action='store_true')
+    parser.add_argument('--static', action='store_true')
 
     parser.add_argument('--save_checkpoint_steps', default=10000, type=int)
     parser.add_argument('--valid_steps', default=10000, type=int)
@@ -157,15 +158,19 @@ def save_model(model, optimizer, save_variable_list, args):
     )
 
 
-def read_quadruple(file_path, entity2id, relation2id):
+def read_quadruple(file_path, entity2id, relation2id, static):
     '''
     Read quadruples and map them into ids.
     '''
     quadruples = []
     with open(file_path) as fin:
         for line in fin:
-            h, r, t, ts = line.strip().split('\t')
-            quadruples.append((entity2id[h], relation2id[r], entity2id[t], int(ts)))
+            if static:
+                h, r, t, ts = line.strip().split('\t')
+                quadruples.append((entity2id[h], relation2id[r], entity2id[t], int(ts)))
+            else:
+                h, r, t = line.strip().split('\t')
+                quadruples.append((entity2id[h], relation2id[r], entity2id[t], 0))
     return quadruples
 
 
@@ -253,11 +258,11 @@ def main(args):
     logging.info('#entity: %d' % nentity)
     logging.info('#relation: %d' % nrelation)
 
-    train_quadruples = read_quadruple(os.path.join(args.data_path, 'train.txt'), entity2id, relation2id)
+    train_quadruples = read_quadruple(os.path.join(args.data_path, 'train.txt'), entity2id, relation2id, args.static)
     logging.info('#train: %d' % len(train_quadruples))
-    valid_quadruples = read_quadruple(os.path.join(args.data_path, 'valid.txt'), entity2id, relation2id)
+    valid_quadruples = read_quadruple(os.path.join(args.data_path, 'valid.txt'), entity2id, relation2id, args.static)
     logging.info('#valid: %d' % len(valid_quadruples))
-    test_quadruples = read_quadruple(os.path.join(args.data_path, 'test.txt'), entity2id, relation2id)
+    test_quadruples = read_quadruple(os.path.join(args.data_path, 'test.txt'), entity2id, relation2id, args.static)
     logging.info('#test: %d' % len(test_quadruples))
 
     # All true quadruples
