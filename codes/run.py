@@ -110,50 +110,52 @@ def override_config(args):
     args.test_batch_size = argparse_dict['test_batch_size']
 
 
-def save_model(model, optimizer, save_variable_list, args):
+def save_model(step, model, optimizer, save_variable_list, args):
     '''
     Save the parameters of the model and the optimizer,
     as well as some other variables such as step and learning_rate
     '''
 
+    os.makedirs(os.path.join(args.save_path, f'{step}'), exist_ok=True)
+
     argparse_dict = vars(args)
-    with open(os.path.join(args.save_path, 'config.json'), 'w') as fjson:
+    with open(os.path.join(args.save_path, f'{step}/config.json'), 'w') as fjson:
         json.dump(argparse_dict, fjson)
 
     torch.save({
         **save_variable_list,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()},
-        os.path.join(args.save_path, 'checkpoint')
+        os.path.join(args.save_path, f'{step}/checkpoint')
     )
 
     entity_embedding = model.entity_embedding.detach().cpu().numpy()
     np.save(
-        os.path.join(args.save_path, 'entity_embedding'),
+        os.path.join(args.save_path, f'{step}/entity_embedding'),
         entity_embedding
     )
 
     relation_embedding = model.relation_embedding.detach().cpu().numpy()
     np.save(
-        os.path.join(args.save_path, 'relation_embedding'),
+        os.path.join(args.save_path, f'{step}/relation_embedding'),
         relation_embedding
     )
 
     d_frq_embedding = model.d_frq_embedding.detach().cpu().numpy()
     np.save(
-        os.path.join(args.save_path, 'd_frq_embedding'),
+        os.path.join(args.save_path, f'{step}/d_frq_embedding'),
         d_frq_embedding
     )
 
     d_phi_embedding = model.d_phi_embedding.detach().cpu().numpy()
     np.save(
-        os.path.join(args.save_path, 'd_phi_embedding'),
+        os.path.join(args.save_path, f'{step}/d_phi_embedding'),
         d_phi_embedding
     )
 
     d_amp_embedding = model.d_amp_embedding.detach().cpu().numpy()
     np.save(
-        os.path.join(args.save_path, 'd_amp_embedding'),
+        os.path.join(args.save_path, f'{step}/d_amp_embedding'),
         d_amp_embedding
     )
 
@@ -166,11 +168,11 @@ def read_quadruple(file_path, entity2id, relation2id, static):
     with open(file_path) as fin:
         for line in fin:
             if static:
-                h, r, t, ts = line.strip().split('\t')
-                quadruples.append((entity2id[h], relation2id[r], entity2id[t], int(ts)))
-            else:
                 h, r, t = line.strip().split('\t')
                 quadruples.append((entity2id[h], relation2id[r], entity2id[t], 0))
+            else:
+                h, r, t, ts = line.strip().split('\t')
+                quadruples.append((entity2id[h], relation2id[r], entity2id[t], int(ts)))
     return quadruples
 
 
@@ -464,7 +466,7 @@ def main(args):
                     'current_learning_rate': current_learning_rate,
                     'warm_up_steps': warm_up_steps
                 }
-                save_model(kge_model, optimizer, save_variable_list, args)
+                save_model(step, kge_model, optimizer, save_variable_list, args)
 
             if step % args.log_steps == 0:
                 metrics = {}
@@ -483,7 +485,7 @@ def main(args):
             'current_learning_rate': current_learning_rate,
             'warm_up_steps': warm_up_steps
         }
-        save_model(kge_model, optimizer, save_variable_list, args)
+        save_model(args.max_steps, kge_model, optimizer, save_variable_list, args)
 
     if args.do_valid:
         logging.info('Evaluating on Valid Dataset...')
