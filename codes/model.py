@@ -14,27 +14,23 @@ from dataloader import TestDataset
 
 
 class KGEModel(nn.Module):
-    def __init__(self, model_name, nentity, nrelation, hidden_dim, time_hidden_dim, relative_hidden_dim,
-                 gamma, epsilon, double_entity_embedding=False, double_relation_embedding=False,
-                 double_time_embedding=False, double_relative_embedding=False,
-                 type_index=None, type_reverse_index=None, users_idx=None):
+    def __init__(self, tp_ix, tp_rix, u_ix, args):
         super(KGEModel, self).__init__()
-        self.model_name = model_name
-        self.nentity = nentity
+        self.mdl_nm = args.model
 
-        self.type_index = type_index
-        self.type_reverse_index = type_reverse_index
-        self.users_idx = users_idx
+        self.tp_ix = tp_ix
+        self.tp_rix = tp_rix
+        self.u_ix = u_ix
 
-        self.epsilon = epsilon
-        self.gamma = nn.Parameter(torch.Tensor([gamma]), requires_grad=False)
+        self.epsilon = args.epsilon
+        self.gamma = nn.Parameter(torch.Tensor([args.gamma]), requires_grad=False)
 
-        self.stt_dim = hidden_dim * 2 if double_entity_embedding else hidden_dim
-        self.abs_dim = time_hidden_dim * 2 if double_time_embedding else time_hidden_dim
-        self.rel_dim = relative_hidden_dim * 2 if double_relative_embedding else relative_hidden_dim
+        self.stt_dim = args.static_dim * 2 if args.double_entity_embedding else args.static_dim
+        self.abs_dim = args.absolute_dim * 2 if args.double_time_embedding else args.absolute_dim
+        self.rel_dim = args.relative_dim * 2 if args.double_relative_embedding else args.relative_dim
 
-        self.r_dim = hidden_dim * 2 if double_relation_embedding else hidden_dim
-        if double_entity_embedding and not double_relation_embedding:
+        self.r_dim = args.static_dim * 2 if args.double_relation_embedding else args.static_dim
+        if args.double_entity_embedding and not args.double_relation_embedding:
             self.r_dim += (self.abs_dim // 2) + (self.rel_dim // 2)
         else:
             self.r_dim += self.abs_dim + self.rel_dim
@@ -42,34 +38,33 @@ class KGEModel(nn.Module):
         self.emb_rng = nn.Parameter(
             torch.Tensor([(self.gamma.item() + self.epsilon) / self.r_dim]), requires_grad=False)
 
-        self.e_emb = nn.Parameter(torch.zeros(self.nentity, self.stt_dim))
+        self.e_emb = nn.Parameter(torch.zeros(args.nentity, self.stt_dim))
+        self.r_emb = nn.Parameter(torch.zeros(args.nrelation, self.r_dim))
         nn.init.uniform_(tensor=self.e_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
-
-        self.r_emb = nn.Parameter(torch.zeros(nrelation, self.r_dim))
         nn.init.uniform_(tensor=self.r_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.abs_d_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
-        self.abs_d_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
-        self.abs_d_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        self.abs_d_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        self.abs_d_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        self.abs_d_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         nn.init.uniform_(tensor=self.abs_d_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
         nn.init.uniform_(tensor=self.abs_d_phi_emb, a=-np.pi, b=np.pi)
         nn.init.uniform_(tensor=self.abs_d_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        # self.abs_m_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
-        # self.abs_m_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
-        # self.abs_m_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        # self.abs_m_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        # self.abs_m_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        # self.abs_m_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         # nn.init.uniform_(tensor=self.abs_m_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
         # nn.init.uniform_(tensor=self.abs_m_phi_emb, a=-np.pi, b=np.pi)
         # nn.init.uniform_(tensor=self.abs_m_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
-        self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
-        self.rel_d_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
+        self.rel_d_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.rel_dim))
+        self.rel_d_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.rel_dim))
+        self.rel_d_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.rel_dim))
         nn.init.uniform_(tensor=self.rel_d_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
         nn.init.uniform_(tensor=self.rel_d_phi_emb, a=-np.pi, b=np.pi)
         nn.init.uniform_(tensor=self.rel_d_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        if model_name == 'pRotatE':
+        if self.mdl_nm == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng.item()]]))
 
     def abs_emb(self, e, d, m):
@@ -99,8 +94,8 @@ class KGEModel(nn.Module):
 
         return torch.cat([re_t, im_t], dim=1)
 
-    def forward(self, x, mode='single'):
-        if mode == 'single':
+    def forward(self, x, md=None):
+        if md is None:
             d_abs = x[:, 3].view(-1, 1)
             m_abs = x[:, 4].view(-1, 1)
 
@@ -113,7 +108,7 @@ class KGEModel(nn.Module):
             o_t = self.t_emb(x[:, 2], d_abs, m_abs, x[:, 6].view(-1, 1)).unsqueeze(1)
 
             t_neg = None
-        elif mode == 's':
+        elif md == 's':
             pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
             d_abs = pos[:, 3].view(-1, 1)
@@ -124,7 +119,7 @@ class KGEModel(nn.Module):
                 neg.view(-1),
                 d_abs.repeat(neg.size(1), 1).contiguous(),
                 m_abs.repeat(neg.size(1), 1).contiguous(),
-                neg_rel.view(-1, 1),
+                neg_rel.view(-1, 1)
             ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
@@ -140,18 +135,18 @@ class KGEModel(nn.Module):
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_s_rel.view(-1, 1),
+                neg_abs_s_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_o_rel.view(-1, 1),
+                neg_abs_o_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (true_s, o, s_t_neg, o_t_neg)
-        elif mode == 'o':
+        elif md == 'o':
             pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
             d_abs = pos[:, 3].view(-1, 1)
@@ -167,7 +162,7 @@ class KGEModel(nn.Module):
                 neg.view(-1),
                 d_abs.repeat(neg.size(1), 1).contiguous(),
                 m_abs.repeat(neg.size(1), 1).contiguous(),
-                neg_rel.view(-1, 1),
+                neg_rel.view(-1, 1)
             ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
@@ -178,18 +173,18 @@ class KGEModel(nn.Module):
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_s_rel.view(-1, 1),
+                neg_abs_s_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_o_rel.view(-1, 1),
+                neg_abs_o_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
-        elif mode == 't':
+        elif md == 't':
             pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
             d_abs = pos[:, 3].view(-1, 1)
@@ -211,19 +206,19 @@ class KGEModel(nn.Module):
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_s_rel.view(-1, 1),
+                neg_abs_s_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
-                neg_abs_o_rel.view(-1, 1),
+                neg_abs_o_rel.view(-1, 1)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
 
-        return getattr(self, self.model_name)(s, r, o, s_t, o_t, t_neg, mode)
+        return getattr(self, self.mdl_nm)(s, r, o, s_t, o_t, t_neg, md)
 
     def TransE(self, head, relation, tail, head_time, tail_time, mode):
         head = torch.cat([head, head_time], dim=2)
@@ -286,11 +281,11 @@ class KGEModel(nn.Module):
             re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
             re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
 
-        if mode != 'single':
+        if mode is not None:
             re_head_time_neg, im_head_time_neg = torch.chunk(time_neg[2], 2, dim=2)
             re_tail_time_neg, im_tail_time_neg = torch.chunk(time_neg[3], 2, dim=2)
 
-        if mode != 'single':
+        if mode is not None:
             re_true_head, im_true_head = torch.chunk(time_neg[0], 2, dim=2)
             re_head_neg = torch.cat([re_true_head.repeat(1, re_head_time_neg.size(1), 1), re_head_time_neg], dim=2)
             im_head_neg = torch.cat([im_true_head.repeat(1, im_head_time_neg.size(1), 1), im_head_time_neg], dim=2)
@@ -299,7 +294,7 @@ class KGEModel(nn.Module):
             re_head = torch.cat([re_head, re_head_time], dim=2)
             im_head = torch.cat([im_head, im_head_time], dim=2)
 
-        if mode != 'single':
+        if mode is not None:
             re_true_tail, im_true_tail = torch.chunk(time_neg[1], 2, dim=2)
             re_tail_neg = torch.cat([re_true_tail.repeat(1, re_tail_time_neg.size(1), 1), re_tail_time_neg], dim=2)
             im_tail_neg = torch.cat([re_true_tail.repeat(1, im_tail_time_neg.size(1), 1), im_tail_time_neg], dim=2)
@@ -315,7 +310,7 @@ class KGEModel(nn.Module):
         re_relation = torch.cos(phase_relation)
         im_relation = torch.sin(phase_relation)
 
-        if mode != 'single':
+        if mode is not None:
             re_relation_neg = re_relation.repeat(1, re_head_neg.size(1), 1)
             im_relation_neg = im_relation.repeat(1, im_tail_neg.size(1), 1)
 
@@ -407,7 +402,7 @@ class KGEModel(nn.Module):
 
         pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, smpl_w, md = next(tr_it)
         smpl_w = smpl_w.squeeze(dim=1)
-        if args.cuda:
+        if torch.cuda.is_available():
             pos = pos.cuda()
             neg = neg.cuda()
             neg_abs = neg_abs.cuda()
@@ -448,81 +443,71 @@ class KGEModel(nn.Module):
                 'loss': lss.item()}
 
     @staticmethod
-    def test_step(model, test_quadruples, all_true_quadruples, event_index, args):
-        model.eval()
+    def test_step(mdl, ts_q, al_q, ev_ix, args):
+        mdl.eval()
 
-        if args.eval_mode != 'time':
-            test_dataloader_head = DataLoader(
-                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 's'),
+        ts_dls = []
+        if args.mode in ['head', 'both', 'full']:
+            ts_dls.append((DataLoader(
+                TestDataset(ts_q, al_q, ev_ix, 's', args),
                 batch_size=args.test_batch_size,
-                num_workers=max(1, args.cpu_num // 2)
-            )
-
-            test_dataloader_tail = DataLoader(
-                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 'o'),
+                num_workers=max(1, os.cpu_count() // 2),
+            ), 's'))
+        if args.mode in ['tail', 'both', 'full']:
+            ts_dls.append((DataLoader(
+                TestDataset(ts_q, al_q, ev_ix, 'o', args),
                 batch_size=args.test_batch_size,
-                num_workers=max(1, args.cpu_num // 2)
-            )
-
-            test_dataset_list = []
-            if args.eval_mode != 'tail':
-                test_dataset_list.append((test_dataloader_head, 's'))
-            if args.eval_mode != 'head':
-                test_dataset_list.append((test_dataloader_tail, 'o'))
-        else:
-            test_dataloader_time = DataLoader(
-                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 't'),
+                num_workers=max(1, os.cpu_count() // 2),
+            ), 'o'))
+        if args.mode in ['time', 'full']:
+            ts_dls.append((DataLoader(
+                TestDataset(ts_q, al_q, ev_ix, 't', args),
                 batch_size=args.test_batch_size,
-                num_workers=max(1, args.cpu_num // 2)
-            )
-            test_dataset_list = [(test_dataloader_time, 't'), ]
+                num_workers=max(1, os.cpu_count() // 2),
+            ), 't'))
 
         logs = []
-
-        step = 0
-        total_steps = sum([len(dataset) for dataset, _ in test_dataset_list])
-
+        stp = 0
+        tot_stp = sum([len(ts_dl) for ts_dl, _ in ts_dls])
         with torch.no_grad():
-            for test_dataset, md in test_dataset_list:
-                for pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, fil_b in test_dataset:
-                    if args.cuda:
+            for ts_dl, md in ts_dls:
+                for pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b in ts_dl:
+                    if torch.cuda.is_available():
                         pos = pos.cuda()
                         neg = neg.cuda()
                         neg_abs = neg_abs.cuda()
-                        neg_rel = neg_rel.cuda()
                         neg_abs_s_rel = neg_abs_s_rel.cuda()
                         neg_abs_o_rel = neg_abs_o_rel.cuda()
+                        neg_rel = neg_rel.cuda()
                         fil_b = fil_b.cuda()
 
-                    score = model((pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel), md) + fil_b
-                    argsort = torch.argsort(score, dim=1, descending=True)
+                    sc = mdl((pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel), md) + fil_b
+                    as_sc = torch.argsort(sc, dim=1, descending=True)
 
                     if md == 's':
-                        positive_arg = pos[:, 0]
-                        positive_issue_idx = pos[:, 2]
+                        true_pos, pos_u_ix = pos[:, 0], pos[:, 2]
                     elif md == 'o':
-                        positive_arg = pos[:, 2]
-                        positive_issue_idx = pos[:, 0]
+                        true_pos, pos_u_ix = pos[:, 2], pos[:, 0]
                     elif md == 't':
-                        positive_arg = []
+                        true_pos = []
                         for (d, m) in pos[:, 3:5]:
-                            min_dt = datetime.fromtimestamp(test_dataset.dataset.min_ts, test_dataset.dataset.tz)
-                            dt = datetime(day=d, month=m, year=min_dt.year, tzinfo=test_dataset.dataset.tz)
-                            positive_arg.append((dt + timedelta(days=1) - timedelta(seconds=1) - min_dt).days)
+                            min_dt = datetime.fromtimestamp(ts_dl.dataset.min_ts, ts_dl.dataset.tz)
+                            dt = datetime(day=d, month=m, year=min_dt.year, tzinfo=ts_dl.dataset.tz)
+                            true_pos.append((dt + timedelta(days=1) - timedelta(seconds=1) - min_dt).days)
 
                     for i in range(pos.size(0)):
-                        r = (argsort[i, :] == positive_arg[i]).nonzero().item() + 1
-                        if md != 't' and model.type_index is not None:
-                            index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
-                            if model.users_idx is None:
-                                r = np.isin(argsort[i, :].cpu().numpy(), index)[:r].sum()
+                        r = (as_sc[i, :] == true_pos[i]).nonzero().item() + 1
+                        if md != 't' and args.negative_type_sampling:
+                            ix = mdl.tp_ix[mdl.tp_rix[true_pos[i].item()]]
+                            if args.heuristic_evaluation:
+                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
                             else:
-                                issue_index = model.users_idx.get(positive_issue_idx[i].item(), [])
-                                issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:r].sum()
-                                if issue_ranking == 0:
-                                    r = np.isin(argsort[i, :].cpu().numpy(), index)[:r].sum()
+                                u_ix = mdl.u_ix.get(pos_u_ix[i].item(), [])
+                                u_r = np.isin(as_sc[i, :].cpu().numpy(), u_ix)[:r].sum()
+                                if u_r == 0:
+                                    r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
                                 else:
-                                    r = issue_ranking
+                                    r = u_r
 
                         logs.append({'MRR': 1.0 / r,
                                      'MR': float(r),
@@ -530,13 +515,13 @@ class KGEModel(nn.Module):
                                      'HITS@3': 1.0 if r <= 3 else 0.0,
                                      'HITS@10': 1.0 if r <= 10 else 0.0, })
 
-                    if step % args.test_log_steps == 0:
-                        logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
+                    if stp % args.test_log_steps == 0:
+                        logging.info(f'Evaluating the model ... ({stp}/{tot_stp})')
 
-                    step += 1
+                    stp += 1
 
-        metrics = {}
-        for metric in logs[0].keys():
-            metrics[metric] = sum([log[metric] for log in logs])/len(logs)
+        mtrs = {}
+        for mtr in logs[0].keys():
+            mtrs[mtr] = sum([log[mtr] for log in logs]) / len(logs)
 
-        return metrics
+        return mtrs

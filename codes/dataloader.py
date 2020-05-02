@@ -44,7 +44,7 @@ class TrainDataset(Dataset):
 
         return true_s, true_o
 
-    def __init__(self, args, tup, tp_ix, tp_rix, ev_ix, md):
+    def __init__(self, tup, tp_ix, tp_rix, ev_ix, md, args):
         self.tup = tup
         self.md = md
 
@@ -153,7 +153,7 @@ class TrainDataset(Dataset):
 
 
 class TestDataset(Dataset):
-    def __init__(self, args, tup, al_t, ev_ix, md):
+    def __init__(self, tup, al_t, ev_ix, md, args):
         self.tup = tup
         self.md = md
 
