@@ -23,7 +23,7 @@ def args():
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_valid', action='store_true')
     parser.add_argument('--do_test', action='store_true')
-    parser.add_argument('--eval_train', action='store_true')
+    parser.add_argument('--do_eval', action='store_true')
 
     parser.add_argument('--static', action='store_true')
 
@@ -31,11 +31,6 @@ def args():
     parser.add_argument('--static_dim', default=256, type=int)
     parser.add_argument('--absolute_dim', default=256, type=int)
     parser.add_argument('--relative_dim', default=256, type=int)
-
-    parser.add_argument('-de', '--double_entity_embedding', action='store_true')
-    parser.add_argument('-dr', '--double_relation_embedding', action='store_true')
-    parser.add_argument('-dt', '--double_time_embedding', action='store_true')
-    parser.add_argument('-drt', '--double_relative_embedding', action='store_true')
 
     parser.add_argument('--gamma', default=6.0, type=float)
     parser.add_argument('--epsilon', default=10.0, type=float)
@@ -59,12 +54,12 @@ def args():
     parser.add_argument('--batch_size', default=1024, type=int)
     parser.add_argument('--test_batch_size', default=4, type=int)
 
-    parser.add_argument('--max_steps', default=100000, type=int)
-    parser.add_argument('--warm_up_steps', default=None, type=int)
+    parser.add_argument('--max_steps', default=200000, type=int)
+    parser.add_argument('--warm_up_steps', default=100000, type=int)
 
-    parser.add_argument('--checkpoint', default=None, type=str)
+    parser.add_argument('--checkpoint', default='', type=str)
     parser.add_argument('--save_path', default=None, type=str)
-    parser.add_argument('--metric', default='MRR', type=str, choices=['HITS@1', 'HITS@3', 'HITS@10', 'MR', 'MRR'])
+    parser.add_argument('--metric', default='MRR', type=str, choices=['H1', 'H3', 'H10', 'MR', 'MRR'])
 
     parser.add_argument('--mode', default='both', type=str, choices=['head', 'tail', 'both', 'time', 'full'])
 
@@ -132,15 +127,45 @@ def log(md, stp, mtrs):
         logging.info(f'{md} {mtr} at step {stp}: {val}')
 
 
-def save(mdl, opt, save_variable_list, args):
+def logger(args):
+    log_file = os.path.join(args.save_path or args.checkpoint, 'train.log' if args.do_train else 'test.log')
+
+    logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
+                        level=logging.INFO,
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        filename=log_file,
+                        filemode='w')
+    console = logging.StreamHandler()
+    console.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
+    console.setFormatter(formatter)
+    logging.getLogger('').addHandler(console)
+
+
+def save(mdl, opt, var_ls, args):
     with open(os.path.join(args.save_path, 'config.json'), 'w') as f:
         json.dump(vars(args), f)
 
     torch.save({
-        **save_variable_list,
+        **var_ls,
         'mdl_state_dict': mdl.state_dict(),
         'opt_state_dict': opt.state_dict()
     }, os.path.join(args.save_path, f'checkpoint.chk'))
+
+
+def tensorboard_scalars(tb_sw, md, stp, mtrs):
+    for mtr, val in mtrs.items():
+        tb_sw.add_scalar(f'{md}/{mtr}', val, stp)
+
+
+def tensorboard_hparam(tb_sw, mtrs, args):
+    hparams_exc = [
+        'do_train', 'do_valid', 'do_test', 'do_eval',
+        'test_batch_size'
+        'valid_steps', 'log_steps', 'test_log_steps',
+    ]
+    hparams_dict = {hparam: getattr(args, hparam) for hparam in vars(args) if hparam not in hparams_exc}
+    tb_sw.add_hparams(hparams_dict, mtrs)
 
 
 def users_index(args):

@@ -14,31 +14,18 @@ import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 
 import utils as ut
 from dataloader import BidirectionalOneShotIterator, TrainDataset
 from model import KGEModel
 
 
-def set_logger(args):
-    log_file = os.path.join(args.save_path or args.init_checkpoint, 'train.log' if args.do_train else 'test.log')
-
-    logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
-                        level=logging.INFO,
-                        datefmt='%Y-%m-%d %H:%M:%S',
-                        filename=log_file,
-                        filemode='w')
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
-
-
 def main(args):
     os.makedirs(args.save_path, exist_ok=True)
 
-    set_logger(args)
+    ut.logger(args)
+    tb_sw = SummaryWriter()
 
     e2id = ut.index('entities.dict', args)
     r2id = ut.index('relations.dict', args)
@@ -88,7 +75,7 @@ def main(args):
         opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr)
         wu_stps = args.warm_up_steps
 
-    if args.checkpoint:
+    if args.checkpoint != '':
         logging.info(f'Loading checkpoint {args.checkpoint} ...')
         checkpoint = torch.load(os.path.join(args.checkpoint, f'best_{args.metric}.chk'))
         init_stp = checkpoint['step']
@@ -110,9 +97,10 @@ def main(args):
         logging.info(f'learning_rate = {lr}')
 
         logs = []
-        bst_mtr = None
+        bst_mtrs = {}
         for stp in range(init_stp, args.max_steps + 1):
-            logs.append(mdl.train_step(mdl, opt, tr_it, args))
+            log = mdl.train_step(mdl, opt, tr_it, args)
+            logs.append(log)
 
             if stp == wu_stps:
                 lr /= 10
@@ -126,25 +114,34 @@ def main(args):
                     mtrs[mtr] = sum([log[mtr] for log in logs]) / len(logs)
                 ut.log('Training average', stp, mtrs)
                 logs.clear()
+            ut.tensorboard_scalars(tb_sw, 'train', stp, log)
 
             if args.do_valid and stp % args.valid_steps == 0:
                 logging.info('Evaluating on Valid Dataset ...')
-                mtrs = mdl.test_step(args, mdl, vd_q, al_q, ev_ix)
-                if bst_mtr is None or mtrs[args.metric] > bst_mtr:
-                    bst_mtr = mtrs[args.metric]
-                    save_variable_list = {'step': stp, 'lr': lr, 'wu_stps': wu_stps}
-                    ut.save(mdl, opt, save_variable_list, args)
+                mtrs = mdl.test_step(mdl, vd_q, al_q, ev_ix, args)
+                if bst_mtrs.get(args.metric, None) is None or mtrs[args.metric] > bst_mtrs[args.metric]:
+                    bst_mtrs = mtrs.copy()
+                    var_ls = {'step': stp, 'lr': lr, 'wu_stps': wu_stps}
+                    ut.save(mdl, opt, var_ls, args)
                 ut.log('Valid', stp, mtrs)
+                ut.tensorboard_scalars(tb_sw, 'valid', stp, mtrs)
+
+        ut.tensorboard_hparam(tb_sw, bst_mtrs, args)
 
     if args.do_test:
         logging.info('Evaluating on Test Dataset ...')
-        mtrs = mdl.test_step(args, mdl, ts_q, al_q, ev_ix)
+        mtrs = mdl.test_step(mdl, ts_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
+        ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
 
-    if args.eval_train:
+    if args.do_eval:
         logging.info('Evaluating on Training Dataset ...')
-        mtrs = mdl.test_step(args, mdl, tr_q, al_q, ev_ix)
+        mtrs = mdl.test_step(mdl, tr_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
+        ut.tensorboard_scalars(tb_sw, 'eval', stp, mtrs)
+
+    tb_sw.flush()
+    tb_sw.close()
 
 
 if __name__ == '__main__':

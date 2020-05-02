@@ -25,12 +25,12 @@ class KGEModel(nn.Module):
         self.epsilon = args.epsilon
         self.gamma = nn.Parameter(torch.Tensor([args.gamma]), requires_grad=False)
 
-        self.stt_dim = args.static_dim * 2 if args.double_entity_embedding else args.static_dim
-        self.abs_dim = args.absolute_dim * 2 if args.double_time_embedding else args.absolute_dim
-        self.rel_dim = args.relative_dim * 2 if args.double_relative_embedding else args.relative_dim
+        self.stt_dim = args.static_dim * 2 if self.mdl_nm in ['RotatE', 'ComplEx'] else args.static_dim
+        self.abs_dim = args.absolute_dim * 2 if self.mdl_nm in ['RotatE', 'ComplEx'] else args.absolute_dim
+        self.rel_dim = args.relative_dim * 2 if self.mdl_nm in ['RotatE', 'ComplEx'] else args.relative_dim
 
-        self.r_dim = args.static_dim * 2 if args.double_relation_embedding else args.static_dim
-        if args.double_entity_embedding and not args.double_relation_embedding:
+        self.r_dim = args.static_dim * 2 if self.mdl_nm == 'ComplEx' else args.static_dim
+        if self.mdl_nm == 'RotatE':
             self.r_dim += (self.abs_dim // 2) + (self.rel_dim // 2)
         else:
             self.r_dim += self.abs_dim + self.rel_dim
@@ -511,9 +511,9 @@ class KGEModel(nn.Module):
 
                         logs.append({'MRR': 1.0 / r,
                                      'MR': float(r),
-                                     'HITS@1': 1.0 if r <= 1 else 0.0,
-                                     'HITS@3': 1.0 if r <= 3 else 0.0,
-                                     'HITS@10': 1.0 if r <= 10 else 0.0, })
+                                     'H1': 1.0 if r <= 1 else 0.0,
+                                     'H3': 1.0 if r <= 3 else 0.0,
+                                     'H10': 1.0 if r <= 10 else 0.0, })
 
                     if stp % args.test_log_steps == 0:
                         logging.info(f'Evaluating the model ... ({stp}/{tot_stp})')

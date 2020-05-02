@@ -8,3 +8,7 @@ checkpoint
 **/__pycache__
 models
 data
+runs
+logs
+
+run.sh
