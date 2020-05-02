@@ -13,6 +13,7 @@ from itertools import chain
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -48,7 +49,7 @@ def main(args):
     tp_ix, tp_rix = ut.type_index(args)
     u_ix = ut.users_index(args)
 
-    mdl = KGEModel(tp_ix, tp_rix, u_ix, args)
+    mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
     if torch.cuda.is_available():
         mdl = mdl.cuda()
 
@@ -99,7 +100,7 @@ def main(args):
         logs = []
         bst_mtrs = {}
         for stp in range(init_stp, args.max_steps + 1):
-            log = mdl.train_step(mdl, opt, tr_it, args)
+            log = mdl.module.train_step(mdl, opt, tr_it, args)
             logs.append(log)
 
             if stp == wu_stps:
@@ -118,7 +119,7 @@ def main(args):
 
             if args.do_valid and stp % args.valid_steps == 0:
                 logging.info('Evaluating on Valid Dataset ...')
-                mtrs = mdl.test_step(mdl, vd_q, al_q, ev_ix, args)
+                mtrs = mdl.module.test_step(mdl, vd_q, al_q, ev_ix, args)
                 if bst_mtrs.get(args.metric, None) is None or mtrs[args.metric] > bst_mtrs[args.metric]:
                     bst_mtrs = mtrs.copy()
                     var_ls = {'step': stp, 'lr': lr, 'wu_stps': wu_stps}
@@ -130,13 +131,13 @@ def main(args):
 
     if args.do_test:
         logging.info('Evaluating on Test Dataset ...')
-        mtrs = mdl.test_step(mdl, ts_q, al_q, ev_ix, args)
+        mtrs = mdl.module.test_step(mdl, ts_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
 
     if args.do_eval:
         logging.info('Evaluating on Training Dataset ...')
-        mtrs = mdl.test_step(mdl, tr_q, al_q, ev_ix, args)
+        mtrs = mdl.module.test_step(mdl, tr_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'eval', stp, mtrs)
 

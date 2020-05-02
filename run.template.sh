@@ -1,10 +1,10 @@
 #!/bin/sh
 #SBATCH --account=def-jinguo
 #SBATCH --job-name=kge-derotate
-#SBATCH --gres=gpu:p100:1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=16G
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --output=./logs/%x-%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kian.ahrabian@mail.mcgill.ca
