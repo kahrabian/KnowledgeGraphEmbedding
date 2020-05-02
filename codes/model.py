@@ -410,6 +410,7 @@ class KGEModel(nn.Module):
         opt.zero_grad()
 
         pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, smpl_w, md = next(tr_it)
+        smpl_w = smpl_w.squeeze(dim=1)
         if args.cuda:
             pos = pos.cuda()
             neg = neg.cuda()
