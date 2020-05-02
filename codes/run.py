@@ -87,6 +87,8 @@ def parse_args(args=None):
     parser.add_argument('--nentity', type=int, default=0, help='DO NOT MANUALLY SET')
     parser.add_argument('--nrelation', type=int, default=0, help='DO NOT MANUALLY SET')
 
+    parser.add_argument('--negative_max_time_gap', default=259200, type=int)
+
     return parser.parse_args(args)
 
 
@@ -335,32 +337,14 @@ def main(args):
     if args.do_train:
         # Set training dataloader iterator
         train_dataloader_head = DataLoader(
-            TrainDataset(train_quadruples,
-                         nentity,
-                         nrelation,
-                         args.negative_sample_size,
-                         args.negative_time_sample_size,
-                         's',
-                         type_index,
-                         type_reverse_index,
-                         event_index,
-                         args.eval_only),
+            TrainDataset(args, train_quadruples, type_index, type_reverse_index, event_index, 's'),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2)
         )
 
         train_dataloader_tail = DataLoader(
-            TrainDataset(train_quadruples,
-                         nentity,
-                         nrelation,
-                         args.negative_sample_size,
-                         args.negative_time_sample_size,
-                         'o',
-                         type_index,
-                         type_reverse_index,
-                         event_index,
-                         args.eval_only),
+            TrainDataset(args, train_quadruples, type_index, type_reverse_index, event_index, 'o'),
             batch_size=args.batch_size,
             shuffle=True,
             num_workers=max(1, args.cpu_num//2)

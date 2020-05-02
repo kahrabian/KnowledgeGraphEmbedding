@@ -1,19 +1,13 @@
 #!/usr/bin/python3
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import logging
+import os
+from datetime import datetime, timedelta
 
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from sklearn.metrics import average_precision_score
-
 from torch.utils.data import DataLoader
 
 from dataloader import TestDataset
@@ -27,19 +21,19 @@ class KGEModel(nn.Module):
         super(KGEModel, self).__init__()
         self.model_name = model_name
         self.nentity = nentity
-        self.epsilon = epsilon
 
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
         self.users_idx = users_idx
 
+        self.epsilon = epsilon
         self.gamma = nn.Parameter(torch.Tensor([gamma]), requires_grad=False)
 
-        self.e_dim = hidden_dim * 2 if double_entity_embedding else hidden_dim
-        self.r_dim = hidden_dim * 2 if double_relation_embedding else hidden_dim
+        self.stt_dim = hidden_dim * 2 if double_entity_embedding else hidden_dim
         self.abs_dim = time_hidden_dim * 2 if double_time_embedding else time_hidden_dim
         self.rel_dim = relative_hidden_dim * 2 if double_relative_embedding else relative_hidden_dim
 
+        self.r_dim = hidden_dim * 2 if double_relation_embedding else hidden_dim
         if double_entity_embedding and not double_relation_embedding:
             self.r_dim += (self.abs_dim // 2) + (self.rel_dim // 2)
         else:
@@ -48,7 +42,7 @@ class KGEModel(nn.Module):
         self.emb_rng = nn.Parameter(
             torch.Tensor([(self.gamma.item() + self.epsilon) / self.r_dim]), requires_grad=False)
 
-        self.e_emb = nn.Parameter(torch.zeros(self.nentity, self.e_dim))
+        self.e_emb = nn.Parameter(torch.zeros(self.nentity, self.stt_dim))
         nn.init.uniform_(tensor=self.e_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
         self.r_emb = nn.Parameter(torch.zeros(nrelation, self.r_dim))
@@ -68,13 +62,17 @@ class KGEModel(nn.Module):
         # nn.init.uniform_(tensor=self.abs_m_phi_emb, a=-np.pi, b=np.pi)
         # nn.init.uniform_(tensor=self.abs_m_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.rel_emb = nn.Parameter(torch.zeros(31, self.rel_dim))
-        nn.init.uniform_(tensor=self.rel_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
+        self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
+        self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
+        self.rel_d_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.rel_dim))
+        nn.init.uniform_(tensor=self.rel_d_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
+        nn.init.uniform_(tensor=self.rel_d_phi_emb, a=-np.pi, b=np.pi)
+        nn.init.uniform_(tensor=self.rel_d_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
         if model_name == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng.item()]]))
 
-    def abs_emb(self, e, d):
+    def abs_emb(self, e, d, m):
         d_amp = torch.index_select(self.abs_d_amp_emb, dim=0, index=e)
         d_frq = torch.index_select(self.abs_d_frq_emb, dim=0, index=e)
         d_phi = torch.index_select(self.abs_d_phi_emb, dim=0, index=e)
@@ -85,113 +83,117 @@ class KGEModel(nn.Module):
 
         return d_amp * torch.sin(d * d_frq + d_phi)  # + m_amp * torch.sin(m * m_frq + m_phi)
 
-    def t_emb(self, absoulte, relative):
-        re_absoulte, im_absoulte = torch.chunk(absoulte, 2, dim=2)
-        re_relative, im_relative = torch.chunk(relative, 2, dim=2)
+    def rel_emb(self, e, e_rel):
+        d_amp = torch.index_select(self.rel_d_amp_emb, dim=0, index=e)
+        d_frq = torch.index_select(self.rel_d_frq_emb, dim=0, index=e)
+        d_phi = torch.index_select(self.rel_d_phi_emb, dim=0, index=e)
 
-        re_time = torch.cat([re_absoulte, re_relative], dim=2)
-        im_time = torch.cat([im_absoulte, im_relative], dim=2)
+        return d_amp * torch.sin(e_rel * d_frq + d_phi)
 
-        return torch.cat([re_time, im_time], dim=2)
+    def t_emb(self, e, d_abs, m_abs, e_rel):
+        re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs), 2, dim=1)
+        re_rel, im_rel = torch.chunk(self.rel_emb(e, e_rel), 2, dim=1)
+
+        re_t = torch.cat([re_abs, re_rel], dim=1)
+        im_t = torch.cat([im_abs, im_rel], dim=1)
+
+        return torch.cat([re_t, im_t], dim=1)
 
     def forward(self, x, mode='single'):
         if mode == 'single':
-            d = x[:, 3]
+            d_abs = x[:, 3].view(-1, 1)
+            m_abs = x[:, 4].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=x[:, 0]).unsqueeze(1)
-            s_abs = self.abs_emb(x[:, 0], d.view(-1, 1)).unsqueeze(1)
-            s_rel = torch.index_select(self.rel_emb, dim=0, index=x[:, 4]).unsqueeze(1)
-            s_t = self.t_emb(s_abs, s_rel)
+            s_t = self.t_emb(x[:, 0], d_abs, m_abs, x[:, 5].view(-1, 1)).unsqueeze(1)
 
             r = torch.index_select(self.r_emb, dim=0, index=x[:, 1]).unsqueeze(1)
 
             o = torch.index_select(self.e_emb, dim=0, index=x[:, 2]).unsqueeze(1)
-            o_abs = self.abs_emb(x[:, 2], d.view(-1, 1)).unsqueeze(1)
-            o_rel = torch.index_select(self.rel_emb, dim=0, index=x[:, 5]).unsqueeze(1)
-            o_t = self.t_emb(o_abs, o_rel)
+            o_t = self.t_emb(x[:, 2], d_abs, m_abs, x[:, 6].view(-1, 1)).unsqueeze(1)
 
             t_neg = None
         elif mode == 's':
-            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+            pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
-            d = pos[:, 3]
+            d_abs = pos[:, 3].view(-1, 1)
+            m_abs = pos[:, 4].view(-1, 1)
 
-            s = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.e_dim)
-            s_abs = self.abs_emb(
-                neg.view(-1), d.repeat(neg.size(1), 1).t().contiguous().view(-1, 1)
-            ).view(neg.size(0), neg.size(1), self.abs_dim)
-            s_rel = torch.index_select(
-                self.rel_emb, dim=0, index=neg_rel.view(-1)
-            ).view(neg.size(0), neg.size(1), self.rel_dim)
-            s_t = self.t_emb(s_abs, s_rel)
+            s = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.stt_dim)
+            s_t = self.t_emb(
+                neg.view(-1),
+                d_abs.repeat(neg.size(1), 1).contiguous(),
+                m_abs.repeat(neg.size(1), 1).contiguous(),
+                neg_rel.view(-1, 1),
+            ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
 
             o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
-            o_abs = self.abs_emb(pos[:, 2], d.view(-1, 1)).unsqueeze(1)
-            o_rel = torch.index_select(self.rel_emb, dim=0, index=pos[:, 5]).unsqueeze(1)
-            o_t = self.t_emb(o_abs, o_rel)
+            o_t = self.t_emb(pos[:, 2], d_abs, m_abs, pos[:, 6].view(-1, 1)).unsqueeze(1)
 
             true_s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
 
-            s_abs_neg = self.abs_emb(
-                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            s_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
 
-            o_abs_neg = self.abs_emb(
-                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            o_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+            s_t_neg = self.t_emb(
+                pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_s_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+
+            o_t_neg = self.t_emb(
+                pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_o_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (true_s, o, s_t_neg, o_t_neg)
-
         elif mode == 'o':
-            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+            pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
-            d = pos[:, 3]
+            d_abs = pos[:, 3].view(-1, 1)
+            m_abs = pos[:, 4].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
-            s_abs = self.abs_emb(pos[:, 0], d.view(-1, 1)).unsqueeze(1)
-            s_rel = torch.index_select(self.rel_emb, dim=0, index=pos[:, 4]).unsqueeze(1)
-            s_t = self.t_emb(s_abs, s_rel)
+            s_t = self.t_emb(pos[:, 0], d_abs, m_abs, pos[:, 5].view(-1, 1)).unsqueeze(1)
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
 
-            o = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.e_dim)
-            o_abs = self.abs_emb(
-                neg.view(-1), d.repeat(neg.shape[1], 1).t().contiguous().view(-1, 1)
-            ).view(neg.size(0), neg.size(1), self.abs_dim)
-            o_rel = torch.index_select(
-                self.rel_emb, dim=0, index=neg_rel.view(-1)).view(neg.size(0), neg.size(1), self.rel_dim)
-            o_t = self.t_emb(o_abs, o_rel)
+            o = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.stt_dim)
+            o_t = self.t_emb(
+                neg.view(-1),
+                d_abs.repeat(neg.size(1), 1).contiguous(),
+                m_abs.repeat(neg.size(1), 1).contiguous(),
+                neg_rel.view(-1, 1),
+            ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
 
-            s_abs_neg = self.abs_emb(
-                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            s_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
 
-            o_abs_neg = self.abs_emb(
-                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            o_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+            s_t_neg = self.t_emb(
+                pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_s_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+
+            o_t_neg = self.t_emb(
+                pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_o_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
-
         elif mode == 't':
-            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+            pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
-            d = pos[:, 3]
+            d_abs = pos[:, 3].view(-1, 1)
+            m_abs = pos[:, 4].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
             s_t = None
@@ -203,31 +205,25 @@ class KGEModel(nn.Module):
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
 
-            s_abs_neg = self.abs_emb(
-                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            s_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
 
-            o_abs_neg = self.abs_emb(
-                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
-            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
-            o_rel_neg = torch.index_select(
-                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
-            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+            s_t_neg = self.t_emb(
+                pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_s_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+
+            o_t_neg = self.t_emb(
+                pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
+                d_abs_neg.contiguous().view(-1, 1),
+                m_abs_neg.contiguous().view(-1, 1),
+                neg_abs_o_rel.view(-1, 1),
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
 
-        model_func = {
-            'TransE': self.TransE,
-            'DistMult': self.DistMult,
-            'ComplEx': self.ComplEx,
-            'RotatE': self.RotatE,
-            'pRotatE': self.pRotatE
-        }
-
-        return model_func[self.model_name](s, r, o, s_t, o_t, t_neg, mode)
+        return getattr(self, self.model_name)(s, r, o, s_t, o_t, t_neg, mode)
 
     def TransE(self, head, relation, tail, head_time, tail_time, mode):
         head = torch.cat([head, head_time], dim=2)
@@ -457,27 +453,13 @@ class KGEModel(nn.Module):
 
         if args.eval_mode != 'time':
             test_dataloader_head = DataLoader(
-                TestDataset(
-                    test_quadruples,
-                    all_true_quadruples,
-                    args.nentity,
-                    args.nrelation,
-                    event_index,
-                    's'
-                ),
+                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 's'),
                 batch_size=args.test_batch_size,
                 num_workers=max(1, args.cpu_num // 2)
             )
 
             test_dataloader_tail = DataLoader(
-                TestDataset(
-                    test_quadruples,
-                    all_true_quadruples,
-                    args.nentity,
-                    args.nrelation,
-                    event_index,
-                    'o'
-                ),
+                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 'o'),
                 batch_size=args.test_batch_size,
                 num_workers=max(1, args.cpu_num // 2)
             )
@@ -489,14 +471,7 @@ class KGEModel(nn.Module):
                 test_dataset_list.append((test_dataloader_tail, 'o'))
         else:
             test_dataloader_time = DataLoader(
-                TestDataset(
-                    test_quadruples,
-                    all_true_quadruples,
-                    args.nentity,
-                    args.nrelation,
-                    event_index,
-                    't'
-                ),
+                TestDataset(args, test_quadruples, all_true_quadruples, event_index, 't'),
                 batch_size=args.test_batch_size,
                 num_workers=max(1, args.cpu_num // 2)
             )
@@ -519,11 +494,7 @@ class KGEModel(nn.Module):
                         neg_abs_o_rel = neg_abs_o_rel.cuda()
                         fil_b = fil_b.cuda()
 
-                    batch_size = pos.size(0)
-
                     score = model((pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel), md) + fil_b
-
-                    # Explicitly sort all the entities to ensure that there is no test exposure bias
                     argsort = torch.argsort(score, dim=1, descending=True)
 
                     if md == 's':
@@ -533,35 +504,31 @@ class KGEModel(nn.Module):
                         positive_arg = pos[:, 2]
                         positive_issue_idx = pos[:, 0]
                     elif md == 't':
-                        positive_arg = pos[:, 3] - test_dataset.dataset.min_day
+                        positive_arg = []
+                        for (d, m) in pos[:, 3:5]:
+                            min_dt = datetime.fromtimestamp(test_dataset.dataset.min_ts, test_dataset.dataset.tz)
+                            dt = datetime(day=d, month=m, year=min_dt.year, tzinfo=test_dataset.dataset.tz)
+                            positive_arg.append((dt + timedelta(days=1) - timedelta(seconds=1) - min_dt).days)
 
-                    for i in range(batch_size):
-                        # Notice that argsort is not ranking
-                        ranking = (argsort[i, :] == positive_arg[i]).nonzero()
-                        assert ranking.size(0) == 1
-
-                        # ranking + 1 is the true ranking used in evaluation metrics
-                        ranking = 1 + ranking.item()
-
+                    for i in range(pos.size(0)):
+                        r = (argsort[i, :] == positive_arg[i]).nonzero().item() + 1
                         if md != 't' and model.type_index is not None:
                             index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
                             if model.users_idx is None:
-                                ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
+                                r = np.isin(argsort[i, :].cpu().numpy(), index)[:r].sum()
                             else:
                                 issue_index = model.users_idx.get(positive_issue_idx[i].item(), [])
-                                issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:ranking].sum()
+                                issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:r].sum()
                                 if issue_ranking == 0:
-                                    ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
+                                    r = np.isin(argsort[i, :].cpu().numpy(), index)[:r].sum()
                                 else:
-                                    ranking = issue_ranking
+                                    r = issue_ranking
 
-                        logs.append({
-                            'MRR': 1.0 / ranking,
-                            'MR': float(ranking),
-                            'HITS@1': 1.0 if ranking <= 1 else 0.0,
-                            'HITS@3': 1.0 if ranking <= 3 else 0.0,
-                            'HITS@10': 1.0 if ranking <= 10 else 0.0,
-                        })
+                        logs.append({'MRR': 1.0 / r,
+                                     'MR': float(r),
+                                     'HITS@1': 1.0 if r <= 1 else 0.0,
+                                     'HITS@3': 1.0 if r <= 3 else 0.0,
+                                     'HITS@10': 1.0 if r <= 10 else 0.0, })
 
                     if step % args.test_log_steps == 0:
                         logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
