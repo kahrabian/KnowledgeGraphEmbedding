@@ -69,19 +69,19 @@ class TrainDataset(Dataset):
             if self.eval_only or self.type_index is None:
                 negative_sample = np.random.randint(self.nentity, size=self.negative_sample_size*2)
             else:
-                if self.mode == 'head-batch':
+                if self.mode == 's':
                     sample_space = self.type_index[self.type_reverse_index[head]]
-                elif self.mode == 'tail-batch':
+                elif self.mode == 'o':
                     sample_space = self.type_index[self.type_reverse_index[tail]]
                 negative_sample = np.random.choice(sample_space, size=self.negative_sample_size*2)
-            if self.mode == 'head-batch':
+            if self.mode == 's':
                 mask = np.in1d(
                     negative_sample,
                     self.true_head[(relation, tail)],
                     assume_unique=True,
                     invert=True
                 )
-            elif self.mode == 'tail-batch':
+            elif self.mode == 'o':
                 mask = np.in1d(
                     negative_sample,
                     self.true_tail[(head, relation)],
@@ -137,21 +137,7 @@ class TrainDataset(Dataset):
 
         return positive_sample, negative_sample, negative_time_sample, \
             negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            subsampling_weight, self.mode
-
-    @staticmethod
-    def collate_fn(data):
-        positive_sample = torch.stack([_[0] for _ in data], dim=0)
-        negative_sample = torch.stack([_[1] for _ in data], dim=0)
-        negative_time_sample = torch.stack([_[2] for _ in data], dim=0)
-        negative_sample_relative = torch.stack([_[3] for _ in data], dim=0)
-        negative_time_sample_head_relative = torch.stack([_[4] for _ in data], dim=0)
-        negative_time_sample_tail_relative = torch.stack([_[5] for _ in data], dim=0)
-        subsampling_weight = torch.cat([_[6] for _ in data], dim=0)
-        mode = data[0][7]
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            subsampling_weight, mode
+            subsampling_weight
 
     @staticmethod
     def count_frequency(quadruples, start=4):
@@ -235,15 +221,15 @@ class TestDataset(Dataset):
         head_relative = self.lt(head, timestamp, time_gap=time_gap)
         tail_relative = self.lt(tail, timestamp, time_gap=time_gap)
 
-        if self.mode == 'head-batch':
+        if self.mode == 's':
             tmp = [(0, rand_head) if (rand_head, relation, tail, day) not in self.quadruple_set
                    else (-1, head) for rand_head in range(self.nentity)]
             tmp[head] = (0, head)
-        elif self.mode == 'tail-batch':
+        elif self.mode == 'o':
             tmp = [(0, rand_tail) if (head, relation, rand_tail, day) not in self.quadruple_set
                    else (-1, tail) for rand_tail in range(self.nentity)]
             tmp[tail] = (0, tail)
-        elif self.mode == 'time':
+        elif self.mode == 't':
             tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
                    else (-1, day) for rand_day in range(self.min_day, self.max_day + 1)]
             tmp[day - self.min_day] = (0, day)
@@ -252,7 +238,7 @@ class TestDataset(Dataset):
 
         tmp = torch.LongTensor(tmp)
         filter_bias = tmp[:, 0].float()
-        if self.mode != 'time':
+        if self.mode != 't':
             negative_sample = tmp[:, 1]
             negative_time_sample = torch.from_numpy(np.array([], dtype=np.int64))
 
@@ -274,21 +260,7 @@ class TestDataset(Dataset):
 
         return positive_sample, negative_sample, negative_time_sample, \
             negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            filter_bias, self.mode
-
-    @staticmethod
-    def collate_fn(data):
-        positive_sample = torch.stack([_[0] for _ in data], dim=0)
-        negative_sample = torch.stack([_[1] for _ in data], dim=0)
-        negative_time_sample = torch.stack([_[2] for _ in data], dim=0)
-        negative_sample_relative = torch.stack([_[3] for _ in data], dim=0)
-        negative_time_sample_head_relative = torch.stack([_[4] for _ in data], dim=0)
-        negative_time_sample_tail_relative = torch.stack([_[5] for _ in data], dim=0)
-        filter_bias = torch.stack([_[6] for _ in data], dim=0)
-        mode = data[0][7]
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            filter_bias, mode
+            filter_bias
 
 
 class BidirectionalOneShotIterator(object):
@@ -300,16 +272,13 @@ class BidirectionalOneShotIterator(object):
     def __next__(self):
         self.step += 1
         if self.step % 2 == 0:
-            data = next(self.iterator_head)
+            data = next(self.iterator_head) + ['s', ]
         else:
-            data = next(self.iterator_tail)
+            data = next(self.iterator_tail) + ['o', ]
         return data
 
     @staticmethod
     def one_shot_iterator(dataloader):
-        '''
-        Transform a PyTorch Dataloader into python iterator
-        '''
         while True:
             for data in dataloader:
                 yield data

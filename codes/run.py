@@ -60,9 +60,9 @@ def parse_args(args=None):
     parser.add_argument('-adv', '--negative_adversarial_sampling', action='store_true')
     parser.add_argument('-typ', '--negative_type_sampling', action='store_true')
     parser.add_argument('-hev', '--heuristic_evaluation', action='store_true')
-    parser.add_argument('-a', '--adversarial_temperature', default=1.0, type=float)
+    parser.add_argument('-a', '--alpha', default=1.0, type=float)
     parser.add_argument('-b', '--batch_size', default=1024, type=int)
-    parser.add_argument('-r', '--regularization', default=0.0, type=float)
+    parser.add_argument('-l', '--lmbda', default=0.0, type=float)
     parser.add_argument('--test_batch_size', default=4, type=int, help='valid/test batch size')
     parser.add_argument('--uni_weight', action='store_true',
                         help='Otherwise use subsampling weighting like in word2vec')
@@ -127,36 +127,6 @@ def save_model(step, model, optimizer, save_variable_list, args):
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict()},
         os.path.join(args.save_path, f'{step}/checkpoint')
-    )
-
-    entity_embedding = model.entity_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, f'{step}/entity_embedding'),
-        entity_embedding
-    )
-
-    relation_embedding = model.relation_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, f'{step}/relation_embedding'),
-        relation_embedding
-    )
-
-    d_frq_embedding = model.d_frq_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, f'{step}/d_frq_embedding'),
-        d_frq_embedding
-    )
-
-    d_phi_embedding = model.d_phi_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, f'{step}/d_phi_embedding'),
-        d_phi_embedding
-    )
-
-    d_amp_embedding = model.d_amp_embedding.detach().cpu().numpy()
-    np.save(
-        os.path.join(args.save_path, f'{step}/d_amp_embedding'),
-        d_amp_embedding
     )
 
 
@@ -370,15 +340,14 @@ def main(args):
                          nrelation,
                          args.negative_sample_size,
                          args.negative_time_sample_size,
-                         'head-batch',
+                         's',
                          type_index,
                          type_reverse_index,
                          event_index,
                          args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=max(1, args.cpu_num//2),
-            collate_fn=TrainDataset.collate_fn
+            num_workers=max(1, args.cpu_num//2)
         )
 
         train_dataloader_tail = DataLoader(
@@ -387,15 +356,14 @@ def main(args):
                          nrelation,
                          args.negative_sample_size,
                          args.negative_time_sample_size,
-                         'tail-batch',
+                         'o',
                          type_index,
                          type_reverse_index,
                          event_index,
                          args.eval_only),
             batch_size=args.batch_size,
             shuffle=True,
-            num_workers=max(1, args.cpu_num//2),
-            collate_fn=TrainDataset.collate_fn
+            num_workers=max(1, args.cpu_num//2)
         )
 
         train_iterator = BidirectionalOneShotIterator(train_dataloader_head, train_dataloader_tail)
@@ -435,7 +403,7 @@ def main(args):
     logging.info('gamma = %f' % args.gamma)
     logging.info('negative_adversarial_sampling = %s' % str(args.negative_adversarial_sampling))
     if args.negative_adversarial_sampling:
-        logging.info('adversarial_temperature = %f' % args.adversarial_temperature)
+        logging.info('alpha = %f' % args.alpha)
 
     # Set valid dataloader as it would be evaluated during training
 

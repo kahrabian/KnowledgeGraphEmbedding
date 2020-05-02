@@ -27,99 +27,65 @@ class KGEModel(nn.Module):
         super(KGEModel, self).__init__()
         self.model_name = model_name
         self.nentity = nentity
-        self.nrelation = nrelation
-        self.hidden_dim = hidden_dim
         self.epsilon = epsilon
 
         self.type_index = type_index
         self.type_reverse_index = type_reverse_index
         self.users_idx = users_idx
 
-        self.gamma = nn.Parameter(
-            torch.Tensor([gamma]),
-            requires_grad=False
-        )
+        self.gamma = nn.Parameter(torch.Tensor([gamma]), requires_grad=False)
 
-        self.entity_dim = hidden_dim*2 if double_entity_embedding else hidden_dim
-        self.relation_dim = hidden_dim*2 if double_relation_embedding else hidden_dim
-        self.time_dim = time_hidden_dim*2 if double_time_embedding else time_hidden_dim
-        self.relative_dim = relative_hidden_dim*2 if double_relative_embedding else relative_hidden_dim
+        self.e_dim = hidden_dim * 2 if double_entity_embedding else hidden_dim
+        self.r_dim = hidden_dim * 2 if double_relation_embedding else hidden_dim
+        self.abs_dim = time_hidden_dim * 2 if double_time_embedding else time_hidden_dim
+        self.rel_dim = relative_hidden_dim * 2 if double_relative_embedding else relative_hidden_dim
 
-        self.relation_dim += (self.time_dim // 2) if double_entity_embedding and \
-            not double_relation_embedding else self.time_dim
+        if double_entity_embedding and not double_relation_embedding:
+            self.r_dim += (self.abs_dim // 2) + (self.rel_dim // 2)
+        else:
+            self.r_dim += self.abs_dim + self.rel_dim
 
-        self.relation_dim += (self.relative_dim // 2) if double_entity_embedding and \
-            not double_relation_embedding else self.relative_dim
+        self.emb_rng = nn.Parameter(
+            torch.Tensor([(self.gamma.item() + self.epsilon) / self.r_dim]), requires_grad=False)
 
-        self.embedding_range = nn.Parameter(
-            torch.Tensor([(self.gamma.item() + self.epsilon) / self.relation_dim]),
-            requires_grad=False
-        )
+        self.e_emb = nn.Parameter(torch.zeros(self.nentity, self.e_dim))
+        nn.init.uniform_(tensor=self.e_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.entity_embedding = nn.Parameter(torch.zeros(nentity, self.entity_dim))
-        nn.init.uniform_(
-            tensor=self.entity_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.r_emb = nn.Parameter(torch.zeros(nrelation, self.r_dim))
+        nn.init.uniform_(tensor=self.r_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.relation_embedding = nn.Parameter(torch.zeros(nrelation, self.relation_dim))
-        nn.init.uniform_(
-            tensor=self.relation_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.abs_d_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        self.abs_d_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        self.abs_d_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        nn.init.uniform_(tensor=self.abs_d_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
+        nn.init.uniform_(tensor=self.abs_d_phi_emb, a=-np.pi, b=np.pi)
+        nn.init.uniform_(tensor=self.abs_d_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.d_frq_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        nn.init.uniform_(
-            tensor=self.d_frq_embedding,
-            a=np.pi / 7,
-            b=2 * np.pi / 3
-        )
+        # self.abs_m_frq_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        # self.abs_m_phi_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        # self.abs_m_amp_emb = nn.Parameter(torch.zeros(self.nentity, self.abs_dim))
+        # nn.init.uniform_(tensor=self.abs_m_frq_emb, a=np.pi / 7, b=2 * np.pi / 3)
+        # nn.init.uniform_(tensor=self.abs_m_phi_emb, a=-np.pi, b=np.pi)
+        # nn.init.uniform_(tensor=self.abs_m_amp_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
-        self.d_phi_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        nn.init.uniform_(
-            tensor=self.d_phi_embedding,
-            a=-np.pi,
-            b=np.pi
-        )
-
-        self.d_amp_embedding = nn.Parameter(torch.zeros(nentity, self.time_dim))
-        nn.init.uniform_(
-            tensor=self.d_amp_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
-
-        self.relative_embedding = nn.Parameter(torch.zeros(31, self.relative_dim))
-        nn.init.uniform_(
-            tensor=self.relative_embedding,
-            a=-self.embedding_range.item(),
-            b=self.embedding_range.item()
-        )
+        self.rel_emb = nn.Parameter(torch.zeros(31, self.rel_dim))
+        nn.init.uniform_(tensor=self.rel_emb, a=-self.emb_rng.item(), b=self.emb_rng.item())
 
         if model_name == 'pRotatE':
-            self.modulus = nn.Parameter(torch.Tensor([[0.5 * self.embedding_range.item()]]))
+            self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng.item()]]))
 
-        # Do not forget to modify this line when you add a new model in the "forward" function
-        if model_name not in ['TransE', 'DistMult', 'ComplEx', 'RotatE', 'pRotatE']:
-            raise ValueError('model %s not supported' % model_name)
+    def abs_emb(self, e, d):
+        d_amp = torch.index_select(self.abs_d_amp_emb, dim=0, index=e)
+        d_frq = torch.index_select(self.abs_d_frq_emb, dim=0, index=e)
+        d_phi = torch.index_select(self.abs_d_phi_emb, dim=0, index=e)
 
-        if model_name == 'RotatE' and \
-                (not double_entity_embedding or double_relation_embedding or not double_time_embedding):
-            raise ValueError('RotatE should use --double_entity_embedding')
+        # m_amp = torch.index_select(self.abs_m_amp_emb, dim=0, index=e)
+        # m_frq = torch.index_select(self.abs_m_frq_emb, dim=0, index=e)
+        # m_phi = torch.index_select(self.abs_m_phi_emb, dim=0, index=e)
 
-        if model_name == 'ComplEx' and \
-                (not double_entity_embedding or not double_relation_embedding or not double_time_embedding):
-            raise ValueError('ComplEx should use --double_entity_embedding and --double_relation_embedding')
+        return d_amp * torch.sin(d * d_frq + d_phi)  # + m_amp * torch.sin(m * m_frq + m_phi)
 
-    def time_embedding(self, entity, day):
-        d_amp = torch.index_select(self.d_amp_embedding, dim=0, index=entity)
-        d_frq = torch.index_select(self.d_frq_embedding, dim=0, index=entity)
-        d_phi = torch.index_select(self.d_phi_embedding, dim=0, index=entity)
-        return d_amp * torch.sin(day * d_frq + d_phi)
-
-    def merge_time_embedding(self, absoulte, relative):
+    def t_emb(self, absoulte, relative):
         re_absoulte, im_absoulte = torch.chunk(absoulte, 2, dim=2)
         re_relative, im_relative = torch.chunk(relative, 2, dim=2)
 
@@ -128,287 +94,130 @@ class KGEModel(nn.Module):
 
         return torch.cat([re_time, im_time], dim=2)
 
-    def forward(self, sample, mode='single'):
-        '''
-        Forward function that calculate the score of a batch of quadruples.
-        In the 'single' mode, sample is a batch of quadruple.
-        In the 'head-batch' or 'tail-batch' mode, sample consists two part.
-        The first part is usually the positive sample.
-        And the second part is the entities in the negative samples.
-        Because negative samples and positive samples usually share two elements 
-        in their quadruple ((head, relation) or (relation, tail)).
-        '''
-
+    def forward(self, x, mode='single'):
         if mode == 'single':
-            batch_size, negative_sample_size = sample.size(0), 1
-
-            day = sample[:, 3]
-
-            head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=sample[:, 0]
-            ).unsqueeze(1)
-
-            head_absolute = self.time_embedding(sample[:, 0], day.view(-1, 1)).unsqueeze(1)
-
-            head_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=sample[:, 4]
-            ).unsqueeze(1)
-
-            head_time = self.merge_time_embedding(head_absolute, head_relative)
-
-            relation = torch.index_select(
-                self.relation_embedding,
-                dim=0,
-                index=sample[:, 1]
-            ).unsqueeze(1)
-
-            tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=sample[:, 2]
-            ).unsqueeze(1)
-
-            tail_absolute = self.time_embedding(sample[:, 2], day.view(-1, 1)).unsqueeze(1)
-
-            tail_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=sample[:, 5]
-            ).unsqueeze(1)
-
-            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
-
-            time_neg = None
-
-        elif mode == 'head-batch':
-            tail_part, head_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
-            batch_size, negative_sample_size = head_part.size(0), head_part.size(1)
-            negative_time_sample_size = time_part.size(1)
-
-            day = tail_part[:, 3]
-
-            head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part.view(-1)
-            ).view(batch_size, negative_sample_size, self.entity_dim)
-
-            head_absolute = self.time_embedding(
-                head_part.view(-1),
-                day.repeat(negative_sample_size, 1).t().contiguous().view(-1, 1)
-            ).view(batch_size, negative_sample_size, self.time_dim)
-
-            head_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=relative_part.view(-1)
-            ).view(batch_size, negative_sample_size, self.relative_dim)
-
-            head_time = self.merge_time_embedding(head_absolute, head_relative)
-
-            relation = torch.index_select(
-                self.relation_embedding,
-                dim=0,
-                index=tail_part[:, 1]
-            ).unsqueeze(1)
-
-            tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=tail_part[:, 2]
-            ).unsqueeze(1)
-
-            tail_absolute = self.time_embedding(tail_part[:, 2], day.view(-1, 1)).unsqueeze(1)
-
-            tail_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=tail_part[:, 5]
-            ).unsqueeze(1)
-
-            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
-
-            true_head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=tail_part[:, 0]
-            ).unsqueeze(1)
-
-            head_absolute_neg = self.time_embedding(
-                tail_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            head_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=head_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
-
-            tail_absolute_neg = self.time_embedding(
-                tail_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            tail_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=tail_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
-
-            time_neg = (true_head, tail, head_time_neg, tail_time_neg)
-
-        elif mode == 'tail-batch':
-            head_part, tail_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
-            batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
-            negative_time_sample_size = time_part.size(1)
-
-            day = head_part[:, 3]
-
-            head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part[:, 0]
-            ).unsqueeze(1)
-
-            head_absolute = self.time_embedding(head_part[:, 0], day.view(-1, 1)).unsqueeze(1)
-
-            head_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=head_part[:, 4]
-            ).unsqueeze(1)
-
-            head_time = self.merge_time_embedding(head_absolute, head_relative)
-
-            relation = torch.index_select(
-                self.relation_embedding,
-                dim=0,
-                index=head_part[:, 1]
-            ).unsqueeze(1)
-
-            tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=tail_part.view(-1)
-            ).view(batch_size, negative_sample_size, self.entity_dim)
-
-            tail_absolute = self.time_embedding(
-                tail_part.view(-1),
-                day.repeat(tail_part.shape[1], 1).t().contiguous().view(-1, 1)
-            ).view(batch_size, negative_sample_size, self.time_dim)
-
-            tail_relative = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=relative_part.view(-1)
-            ).view(batch_size, negative_sample_size, self.relative_dim)
-
-            tail_time = self.merge_time_embedding(tail_absolute, tail_relative)
-
-            true_tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part[:, 2]
-            ).unsqueeze(1)
-
-            head_absolute_neg = self.time_embedding(
-                head_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            head_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=head_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
-
-            tail_absolute_neg = self.time_embedding(
-                head_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            tail_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=tail_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
-
-            time_neg = (head, true_tail, head_time_neg, tail_time_neg)
-
-        elif mode == 'time':
-            head_part, tail_part, time_part, relative_part, head_time_relative_part, tail_time_relative_part = sample
-            batch_size, negative_sample_size = tail_part.size(0), tail_part.size(1)
-            negative_time_sample_size = time_part.size(1)
-
-            day = head_part[:, 3]
-
-            head = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part[:, 0]
-            ).unsqueeze(1)
-
-            head_time = None
-
-            relation = torch.index_select(
-                self.relation_embedding,
-                dim=0,
-                index=head_part[:, 1]
-            ).unsqueeze(1)
-
-            tail = None
-
-            tail_time = None
-
-            true_tail = torch.index_select(
-                self.entity_embedding,
-                dim=0,
-                index=head_part[:, 2]
-            ).unsqueeze(1)
-
-            head_absolute_neg = self.time_embedding(
-                head_part[:, 0].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            head_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=head_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            head_time_neg = self.merge_time_embedding(head_absolute_neg, head_relative_neg)
-
-            tail_absolute_neg = self.time_embedding(
-                head_part[:, 2].repeat(negative_time_sample_size, 1).t().contiguous().view(-1),
-                time_part.view(-1, 1),
-            ).view(batch_size, negative_time_sample_size, self.time_dim)
-
-            tail_relative_neg = torch.index_select(
-                self.relative_embedding,
-                dim=0,
-                index=tail_time_relative_part.view(-1)
-            ).view(batch_size, negative_time_sample_size, self.relative_dim)
-
-            tail_time_neg = self.merge_time_embedding(tail_absolute_neg, tail_relative_neg)
-
-            time_neg = (head, true_tail, head_time_neg, tail_time_neg)
-
-        else:
-            raise ValueError('mode %s not supported' % mode)
+            d = x[:, 3]
+
+            s = torch.index_select(self.e_emb, dim=0, index=x[:, 0]).unsqueeze(1)
+            s_abs = self.abs_emb(x[:, 0], d.view(-1, 1)).unsqueeze(1)
+            s_rel = torch.index_select(self.rel_emb, dim=0, index=x[:, 4]).unsqueeze(1)
+            s_t = self.t_emb(s_abs, s_rel)
+
+            r = torch.index_select(self.r_emb, dim=0, index=x[:, 1]).unsqueeze(1)
+
+            o = torch.index_select(self.e_emb, dim=0, index=x[:, 2]).unsqueeze(1)
+            o_abs = self.abs_emb(x[:, 2], d.view(-1, 1)).unsqueeze(1)
+            o_rel = torch.index_select(self.rel_emb, dim=0, index=x[:, 5]).unsqueeze(1)
+            o_t = self.t_emb(o_abs, o_rel)
+
+            t_neg = None
+        elif mode == 's':
+            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+
+            d = pos[:, 3]
+
+            s = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.e_dim)
+            s_abs = self.abs_emb(
+                neg.view(-1), d.repeat(neg.size(1), 1).t().contiguous().view(-1, 1)
+            ).view(neg.size(0), neg.size(1), self.abs_dim)
+            s_rel = torch.index_select(
+                self.rel_emb, dim=0, index=neg_rel.view(-1)
+            ).view(neg.size(0), neg.size(1), self.rel_dim)
+            s_t = self.t_emb(s_abs, s_rel)
+
+            r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
+
+            o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
+            o_abs = self.abs_emb(pos[:, 2], d.view(-1, 1)).unsqueeze(1)
+            o_rel = torch.index_select(self.rel_emb, dim=0, index=pos[:, 5]).unsqueeze(1)
+            o_t = self.t_emb(o_abs, o_rel)
+
+            true_s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
+
+            s_abs_neg = self.abs_emb(
+                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            s_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+
+            o_abs_neg = self.abs_emb(
+                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            o_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+
+            t_neg = (true_s, o, s_t_neg, o_t_neg)
+
+        elif mode == 'o':
+            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+
+            d = pos[:, 3]
+
+            s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
+            s_abs = self.abs_emb(pos[:, 0], d.view(-1, 1)).unsqueeze(1)
+            s_rel = torch.index_select(self.rel_emb, dim=0, index=pos[:, 4]).unsqueeze(1)
+            s_t = self.t_emb(s_abs, s_rel)
+
+            r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
+
+            o = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.e_dim)
+            o_abs = self.abs_emb(
+                neg.view(-1), d.repeat(neg.shape[1], 1).t().contiguous().view(-1, 1)
+            ).view(neg.size(0), neg.size(1), self.abs_dim)
+            o_rel = torch.index_select(
+                self.rel_emb, dim=0, index=neg_rel.view(-1)).view(neg.size(0), neg.size(1), self.rel_dim)
+            o_t = self.t_emb(o_abs, o_rel)
+
+            true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
+
+            s_abs_neg = self.abs_emb(
+                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            s_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+
+            o_abs_neg = self.abs_emb(
+                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            o_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+
+            t_neg = (s, true_o, s_t_neg, o_t_neg)
+
+        elif mode == 't':
+            pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel = x
+
+            d = pos[:, 3]
+
+            s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
+            s_t = None
+
+            r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
+
+            o = None
+            o_t = None
+
+            true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
+
+            s_abs_neg = self.abs_emb(
+                pos[:, 0].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            s_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_s_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            s_t_neg = self.t_emb(s_abs_neg, s_rel_neg)
+
+            o_abs_neg = self.abs_emb(
+                pos[:, 2].repeat(neg_abs.size(1), 1).t().contiguous().view(-1), neg_abs.view(-1, 1)
+            ).view(neg.size(0), neg_abs.size(1), self.abs_dim)
+            o_rel_neg = torch.index_select(
+                self.rel_emb, dim=0, index=neg_abs_o_rel.view(-1)).view(neg.size(0), neg_abs.size(1), self.rel_dim)
+            o_t_neg = self.t_emb(o_abs_neg, o_rel_neg)
+
+            t_neg = (s, true_o, s_t_neg, o_t_neg)
 
         model_func = {
             'TransE': self.TransE,
@@ -418,18 +227,13 @@ class KGEModel(nn.Module):
             'pRotatE': self.pRotatE
         }
 
-        if self.model_name in model_func:
-            score = model_func[self.model_name](head, relation, tail, head_time, tail_time, time_neg, mode)
-        else:
-            raise ValueError('model %s not supported' % self.model_name)
-
-        return score
+        return model_func[self.model_name](s, r, o, s_t, o_t, t_neg, mode)
 
     def TransE(self, head, relation, tail, head_time, tail_time, mode):
         head = torch.cat([head, head_time], dim=2)
         tail = torch.cat([tail, tail_time], dim=2)
 
-        if mode == 'head-batch':
+        if mode == 's':
             score = head + (relation - tail)
         else:
             score = (head + relation) - tail
@@ -441,7 +245,7 @@ class KGEModel(nn.Module):
         head = torch.cat([head, head_time], dim=2)
         tail = torch.cat([tail, tail_time], dim=2)
 
-        if mode == 'head-batch':
+        if mode == 's':
             score = head * (relation * tail)
         else:
             score = (head * relation) * tail
@@ -463,7 +267,7 @@ class KGEModel(nn.Module):
         re_tail = torch.cat([re_tail, re_tail_time], dim=2)
         im_tail = torch.cat([im_tail, im_tail_time], dim=2)
 
-        if mode == 'head-batch':
+        if mode == 's':
             re_score = re_relation * re_tail + im_relation * im_tail
             im_score = re_relation * im_tail - im_relation * re_tail
             score = re_head * re_score + im_head * im_score
@@ -478,11 +282,11 @@ class KGEModel(nn.Module):
     def RotatE(self, head, relation, tail, head_time, tail_time, time_neg, mode):
         pi = 3.14159265358979323846
 
-        if mode != 'time':
+        if mode != 't':
             re_head, im_head = torch.chunk(head, 2, dim=2)
             re_tail, im_tail = torch.chunk(tail, 2, dim=2)
 
-        if mode != 'time':
+        if mode != 't':
             re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
             re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
 
@@ -495,7 +299,7 @@ class KGEModel(nn.Module):
             re_head_neg = torch.cat([re_true_head.repeat(1, re_head_time_neg.size(1), 1), re_head_time_neg], dim=2)
             im_head_neg = torch.cat([im_true_head.repeat(1, im_head_time_neg.size(1), 1), im_head_time_neg], dim=2)
 
-        if mode != 'time':
+        if mode != 't':
             re_head = torch.cat([re_head, re_head_time], dim=2)
             im_head = torch.cat([im_head, im_head_time], dim=2)
 
@@ -504,13 +308,13 @@ class KGEModel(nn.Module):
             re_tail_neg = torch.cat([re_true_tail.repeat(1, re_tail_time_neg.size(1), 1), re_tail_time_neg], dim=2)
             im_tail_neg = torch.cat([re_true_tail.repeat(1, im_tail_time_neg.size(1), 1), im_tail_time_neg], dim=2)
 
-        if mode != 'time':
+        if mode != 't':
             re_tail = torch.cat([re_tail, re_tail_time], dim=2)
             im_tail = torch.cat([im_tail, im_tail_time], dim=2)
 
         # Make phases of relations uniformly distributed in [-pi, pi]
 
-        phase_relation = relation/(self.embedding_range.item()/pi)
+        phase_relation = relation/(self.emb_rng.item()/pi)
 
         re_relation = torch.cos(phase_relation)
         im_relation = torch.sin(phase_relation)
@@ -519,7 +323,7 @@ class KGEModel(nn.Module):
             re_relation_neg = re_relation.repeat(1, re_head_neg.size(1), 1)
             im_relation_neg = im_relation.repeat(1, im_tail_neg.size(1), 1)
 
-        if mode == 'head-batch':
+        if mode == 's':
             re_score = re_relation * re_tail + im_relation * im_tail
             im_score = re_relation * im_tail - im_relation * re_tail
             re_score = re_score - re_head
@@ -539,7 +343,7 @@ class KGEModel(nn.Module):
                 im_score = torch.cat([im_score, im_score_neg], dim=1)
             elif im_score_neg.size(1) > 0:
                 im_score = im_score_neg
-        elif mode == 'tail-batch':
+        elif mode == 'o':
             re_score = re_head * re_relation - im_head * im_relation
             im_score = re_head * im_relation + im_head * re_relation
             re_score = re_score - re_tail
@@ -559,7 +363,7 @@ class KGEModel(nn.Module):
                 im_score = torch.cat([im_score, im_score_neg], dim=1)
             elif im_score_neg.size(1) > 0:
                 im_score = im_score_neg
-        elif mode == 'time':
+        elif mode == 't':
             re_score_neg = re_head_neg * re_relation_neg - im_head_neg * im_relation_neg
             im_score_neg = im_head_neg * re_relation_neg + re_head_neg * im_relation_neg
             re_score_neg = re_score_neg - re_tail_neg
@@ -584,11 +388,11 @@ class KGEModel(nn.Module):
 
         # Make phases of entities and relations uniformly distributed in [-pi, pi]
 
-        phase_head = head/(self.embedding_range.item()/pi)
-        phase_relation = relation/(self.embedding_range.item()/pi)
-        phase_tail = tail/(self.embedding_range.item()/pi)
+        phase_head = head/(self.emb_rng.item()/pi)
+        phase_relation = relation/(self.emb_rng.item()/pi)
+        phase_tail = tail/(self.emb_rng.item()/pi)
 
-        if mode == 'head-batch':
+        if mode == 's':
             score = phase_head + (phase_relation - phase_tail)
         else:
             score = (phase_head + phase_relation) - phase_tail
@@ -596,243 +400,175 @@ class KGEModel(nn.Module):
         score = torch.sin(score)
         score = torch.abs(score)
 
-        score = self.gamma.item() - score.sum(dim=2) * self.modulus
+        score = self.gamma.item() - score.sum(dim=2) * self.mod
         return score
 
     @staticmethod
-    def train_step(model, optimizer, train_iterator, args):
-        '''
-        A single train step. Apply back-propation and return the loss
-        '''
+    def train_step(mdl, opt, tr_it, args):
+        mdl.train()
 
-        model.train()
+        opt.zero_grad()
 
-        optimizer.zero_grad()
-
-        positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            subsampling_weight, mode = next(train_iterator)
-
+        pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, smpl_w, md = next(tr_it)
         if args.cuda:
-            positive_sample = positive_sample.cuda()
-            negative_sample = negative_sample.cuda()
-            negative_time_sample = negative_time_sample.cuda()
-            negative_sample_relative = negative_sample_relative.cuda()
-            negative_time_sample_head_relative = negative_time_sample_head_relative.cuda()
-            negative_time_sample_tail_relative = negative_time_sample_tail_relative.cuda()
-            subsampling_weight = subsampling_weight.cuda()
+            pos = pos.cuda()
+            neg = neg.cuda()
+            neg_abs = neg_abs.cuda()
+            neg_rel = neg_rel.cuda()
+            neg_abs_s_rel = neg_abs_s_rel.cuda()
+            neg_abs_o_rel = neg_abs_o_rel.cuda()
+            smpl_w = smpl_w.cuda()
 
-        negative_score = model(
-            (positive_sample, negative_sample, negative_time_sample,
-             negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative), mode)
-
+        pos_sc = F.logsigmoid(mdl(pos)).squeeze(dim=1)
+        neg_sc = mdl((pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel), md)
         if args.negative_adversarial_sampling:
-            # In self-adversarial sampling, we do not apply back-propagation on the sampling weight
-            negative_score = (F.softmax(negative_score * args.adversarial_temperature, dim=1).detach()
-                              * F.logsigmoid(-negative_score)).sum(dim=1)
+            neg_sc = (F.softmax(neg_sc * args.alpha, dim=1).detach() * F.logsigmoid(-neg_sc)).sum(dim=1)
         else:
-            negative_score = F.logsigmoid(-negative_score).mean(dim=1)
-
-        positive_score = model(positive_sample)
-
-        positive_score = F.logsigmoid(positive_score).squeeze(dim=1)
+            neg_sc = F.logsigmoid(-neg_sc).mean(dim=1)
 
         if args.uni_weight:
-            positive_sample_loss = - positive_score.mean()
-            negative_sample_loss = - negative_score.mean()
+            pos_lss = -pos_sc.mean()
+            neg_lss = -neg_sc.mean()
         else:
-            positive_sample_loss = - (subsampling_weight * positive_score).sum()/subsampling_weight.sum()
-            negative_sample_loss = - (subsampling_weight * negative_score).sum()/subsampling_weight.sum()
+            pos_lss = -(smpl_w * pos_sc).sum() / smpl_w.sum()
+            neg_lss = -(smpl_w * neg_sc).sum() / smpl_w.sum()
 
-        loss = (positive_sample_loss + negative_sample_loss)/2
+        lss = (pos_lss + neg_lss) / 2
 
-        if args.regularization != 0.0:
+        reg_log = {}
+        if args.lmbda != 0.0:
             # Use L3 regularization for ComplEx and DistMult
-            regularization = args.regularization * (
-                model.entity_embedding.norm(p=3)**3 +
-                model.relation_embedding.norm(p=3).norm(p=3)**3
-            )
-            loss = loss + regularization
-            regularization_log = {'regularization': regularization.item()}
-        else:
-            regularization_log = {}
+            reg = args.lmbda * (mdl.e_emb.norm(p=3) ** 3 + mdl.r_emb.norm(p=3).norm(p=3) ** 3)
+            lss = lss + reg
+            reg_log = {'regularization': reg.item()}
 
-        loss.backward()
+        lss.backward()
+        opt.step()
 
-        optimizer.step()
-
-        log = {
-            **regularization_log,
-            'positive_sample_loss': positive_sample_loss.item(),
-            'negative_sample_loss': negative_sample_loss.item(),
-            'loss': loss.item()
-        }
-
-        return log
+        return {**reg_log,
+                'pos_loss': pos_lss.item(),
+                'neg_loss': neg_lss.item(),
+                'loss': lss.item()}
 
     @staticmethod
     def test_step(model, test_quadruples, all_true_quadruples, event_index, args):
-        '''
-        Evaluate the model on test or valid datasets
-        '''
-
         model.eval()
 
-        if args.countries:
-            # Countries S* datasets are evaluated on AUC-PR
-            # Process test data for AUC-PR evaluation
-            sample = list()
-            y_true = list()
-            for head, relation, tail in test_quadruples:
-                for candidate_region in args.regions:
-                    y_true.append(1 if candidate_region == tail else 0)
-                    sample.append((head, relation, candidate_region))
+        if args.eval_mode != 'time':
+            test_dataloader_head = DataLoader(
+                TestDataset(
+                    test_quadruples,
+                    all_true_quadruples,
+                    args.nentity,
+                    args.nrelation,
+                    event_index,
+                    's'
+                ),
+                batch_size=args.test_batch_size,
+                num_workers=max(1, args.cpu_num // 2)
+            )
 
-            sample = torch.LongTensor(sample)
-            if args.cuda:
-                sample = sample.cuda()
+            test_dataloader_tail = DataLoader(
+                TestDataset(
+                    test_quadruples,
+                    all_true_quadruples,
+                    args.nentity,
+                    args.nrelation,
+                    event_index,
+                    'o'
+                ),
+                batch_size=args.test_batch_size,
+                num_workers=max(1, args.cpu_num // 2)
+            )
 
-            with torch.no_grad():
-                y_score = model(sample).squeeze(1).cpu().numpy()
-
-            y_true = np.array(y_true)
-
-            # average_precision_score is the same as auc_pr
-            auc_pr = average_precision_score(y_true, y_score)
-
-            metrics = {'auc_pr': auc_pr}
-
+            test_dataset_list = []
+            if args.eval_mode != 'tail':
+                test_dataset_list.append((test_dataloader_head, 's'))
+            if args.eval_mode != 'head':
+                test_dataset_list.append((test_dataloader_tail, 'o'))
         else:
-            # Otherwise use standard (filtered) MRR, MR, HITS@1, HITS@3, and HITS@10 metrics
-            # Prepare dataloader for evaluation
-            if args.eval_mode != 'time':
-                test_dataloader_head = DataLoader(
-                    TestDataset(
-                        test_quadruples,
-                        all_true_quadruples,
-                        args.nentity,
-                        args.nrelation,
-                        event_index,
-                        'head-batch'
-                    ),
-                    batch_size=args.test_batch_size,
-                    num_workers=max(1, args.cpu_num//2),
-                    collate_fn=TestDataset.collate_fn
-                )
+            test_dataloader_time = DataLoader(
+                TestDataset(
+                    test_quadruples,
+                    all_true_quadruples,
+                    args.nentity,
+                    args.nrelation,
+                    event_index,
+                    't'
+                ),
+                batch_size=args.test_batch_size,
+                num_workers=max(1, args.cpu_num // 2)
+            )
+            test_dataset_list = [(test_dataloader_time, 't'), ]
 
-                test_dataloader_tail = DataLoader(
-                    TestDataset(
-                        test_quadruples,
-                        all_true_quadruples,
-                        args.nentity,
-                        args.nrelation,
-                        event_index,
-                        'tail-batch'
-                    ),
-                    batch_size=args.test_batch_size,
-                    num_workers=max(1, args.cpu_num//2),
-                    collate_fn=TestDataset.collate_fn
-                )
+        logs = []
 
-                test_dataset_list = []
-                if args.eval_mode != 'tail':
-                    test_dataset_list.append(test_dataloader_head)
-                if args.eval_mode != 'head':
-                    test_dataset_list.append(test_dataloader_tail)
-            else:
-                test_dataloader_time = DataLoader(
-                    TestDataset(
-                        test_quadruples,
-                        all_true_quadruples,
-                        args.nentity,
-                        args.nrelation,
-                        event_index,
-                        'time'
-                    ),
-                    batch_size=args.test_batch_size,
-                    num_workers=max(1, args.cpu_num//2),
-                    collate_fn=TestDataset.collate_fn
-                )
-                test_dataset_list = [test_dataloader_time, ]
+        step = 0
+        total_steps = sum([len(dataset) for dataset, _ in test_dataset_list])
 
-            logs = []
+        with torch.no_grad():
+            for test_dataset, md in test_dataset_list:
+                for pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, fil_b in test_dataset:
+                    if args.cuda:
+                        pos = pos.cuda()
+                        neg = neg.cuda()
+                        neg_abs = neg_abs.cuda()
+                        neg_rel = neg_rel.cuda()
+                        neg_abs_s_rel = neg_abs_s_rel.cuda()
+                        neg_abs_o_rel = neg_abs_o_rel.cuda()
+                        fil_b = fil_b.cuda()
 
-            step = 0
-            total_steps = sum([len(dataset) for dataset in test_dataset_list])
+                    batch_size = pos.size(0)
 
-            with torch.no_grad():
-                for test_dataset in test_dataset_list:
-                    for positive_sample, negative_sample, negative_time_sample, negative_sample_relative, \
-                        negative_time_sample_head_relative, negative_time_sample_tail_relative, filter_bias, mode \
-                            in test_dataset:
-                        if args.cuda:
-                            positive_sample = positive_sample.cuda()
-                            negative_sample = negative_sample.cuda()
-                            negative_time_sample = negative_time_sample.cuda()
-                            negative_sample_relative = negative_sample_relative.cuda()
-                            negative_time_sample_head_relative = negative_time_sample_head_relative.cuda()
-                            negative_time_sample_tail_relative = negative_time_sample_tail_relative.cuda()
-                            filter_bias = filter_bias.cuda()
+                    score = model((pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel), md) + fil_b
 
-                        batch_size = positive_sample.size(0)
+                    # Explicitly sort all the entities to ensure that there is no test exposure bias
+                    argsort = torch.argsort(score, dim=1, descending=True)
 
-                        score = model(
-                            (positive_sample, negative_sample, negative_time_sample, negative_sample_relative,
-                             negative_time_sample_head_relative, negative_time_sample_tail_relative), mode)
-                        score += filter_bias
+                    if md == 's':
+                        positive_arg = pos[:, 0]
+                        positive_issue_idx = pos[:, 2]
+                    elif md == 'o':
+                        positive_arg = pos[:, 2]
+                        positive_issue_idx = pos[:, 0]
+                    elif md == 't':
+                        positive_arg = pos[:, 3] - test_dataset.dataset.min_day
 
-                        # Explicitly sort all the entities to ensure that there is no test exposure bias
-                        argsort = torch.argsort(score, dim=1, descending=True)
+                    for i in range(batch_size):
+                        # Notice that argsort is not ranking
+                        ranking = (argsort[i, :] == positive_arg[i]).nonzero()
+                        assert ranking.size(0) == 1
 
-                        if mode == 'head-batch':
-                            positive_arg = positive_sample[:, 0]
-                            positive_issue_idx = positive_sample[:, 2]
-                        elif mode == 'tail-batch':
-                            positive_arg = positive_sample[:, 2]
-                            positive_issue_idx = positive_sample[:, 0]
-                        elif mode == 'time':
-                            positive_arg = positive_sample[:, 3] - test_dataset.dataset.min_day
-                        else:
-                            raise ValueError('mode %s not supported' % mode)
+                        # ranking + 1 is the true ranking used in evaluation metrics
+                        ranking = 1 + ranking.item()
 
-                        for i in range(batch_size):
-                            # Notice that argsort is not ranking
-                            ranking = (argsort[i, :] == positive_arg[i]).nonzero()
-                            assert ranking.size(0) == 1
-
-                            # ranking + 1 is the true ranking used in evaluation metrics
-                            ranking = 1 + ranking.item()
-
-                            if mode != 'time' and model.type_index is not None:
-                                index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
-                                if model.users_idx is None:
+                        if md != 't' and model.type_index is not None:
+                            index = model.type_index[model.type_reverse_index[positive_arg[i].item()]]
+                            if model.users_idx is None:
+                                ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
+                            else:
+                                issue_index = model.users_idx.get(positive_issue_idx[i].item(), [])
+                                issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:ranking].sum()
+                                if issue_ranking == 0:
                                     ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
                                 else:
-                                    issue_index = model.users_idx.get(positive_issue_idx[i].item(), [])
-                                    issue_ranking = np.isin(argsort[i, :].cpu().numpy(), issue_index)[:ranking].sum()
-                                    if issue_ranking == 0:
-                                        ranking = np.isin(argsort[i, :].cpu().numpy(), index)[:ranking].sum()
-                                    else:
-                                        ranking = issue_ranking
-                            elif mode != 'time':
-                                pass
+                                    ranking = issue_ranking
 
-                            logs.append({
-                                'MRR': 1.0/ranking,
-                                'MR': float(ranking),
-                                'HITS@1': 1.0 if ranking <= 1 else 0.0,
-                                'HITS@2': 1.0 if ranking <= 2 else 0.0,  # NOTE: Time Query
-                                'HITS@3': 1.0 if ranking <= 3 else 0.0,
-                                'HITS@10': 1.0 if ranking <= 10 else 0.0,
-                            })
+                        logs.append({
+                            'MRR': 1.0 / ranking,
+                            'MR': float(ranking),
+                            'HITS@1': 1.0 if ranking <= 1 else 0.0,
+                            'HITS@3': 1.0 if ranking <= 3 else 0.0,
+                            'HITS@10': 1.0 if ranking <= 10 else 0.0,
+                        })
 
-                        if step % args.test_log_steps == 0:
-                            logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
+                    if step % args.test_log_steps == 0:
+                        logging.info('Evaluating the model... (%d/%d)' % (step, total_steps))
 
-                        step += 1
+                    step += 1
 
-            metrics = {}
-            for metric in logs[0].keys():
-                metrics[metric] = sum([log[metric] for log in logs])/len(logs)
+        metrics = {}
+        for metric in logs[0].keys():
+            metrics[metric] = sum([log[metric] for log in logs])/len(logs)
 
         return metrics
