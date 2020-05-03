@@ -430,7 +430,7 @@ class KGEModel(nn.Module):
         reg_log = {}
         if args.lmbda != 0.0:
             # Use L3 regularization for ComplEx and DistMult
-            reg = args.lmbda * (mdl.e_emb.norm(p=3) ** 3 + mdl.r_emb.norm(p=3).norm(p=3) ** 3)
+            reg = args.lmbda * (mdl.module.e_emb.norm(p=3) ** 3 + mdl.module.r_emb.norm(p=3).norm(p=3) ** 3)
             lss = lss + reg
             reg_log = {'regularization': reg.item()}
 
@@ -498,11 +498,11 @@ class KGEModel(nn.Module):
                     for i in range(pos.size(0)):
                         r = (as_sc[i, :] == true_pos[i]).nonzero().item() + 1
                         if md != 't' and args.negative_type_sampling:
-                            ix = mdl.tp_ix[mdl.tp_rix[true_pos[i].item()]]
+                            ix = mdl.module.tp_ix[mdl.module.tp_rix[true_pos[i].item()]]
                             if args.heuristic_evaluation:
                                 r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
                             else:
-                                u_ix = mdl.u_ix.get(pos_u_ix[i].item(), [])
+                                u_ix = mdl.module.u_ix.get(pos_u_ix[i].item(), [])
                                 u_r = np.isin(as_sc[i, :].cpu().numpy(), u_ix)[:r].sum()
                                 if u_r == 0:
                                     r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
