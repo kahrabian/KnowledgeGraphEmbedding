@@ -500,14 +500,11 @@ class KGEModel(nn.Module):
                         if md != 't' and args.negative_type_sampling:
                             ix = mdl.module.tp_ix[mdl.module.tp_rix[true_pos[i].item()]]
                             if args.heuristic_evaluation:
-                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
-                            else:
                                 u_ix = mdl.module.u_ix.get(pos_u_ix[i].item(), [])
                                 u_r = np.isin(as_sc[i, :].cpu().numpy(), u_ix)[:r].sum()
-                                if u_r == 0:
-                                    r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
-                                else:
-                                    r = u_r
+                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum() if u_r == 0 else u_r
+                            else:
+                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
 
                         logs.append({'MRR': 1.0 / r,
                                      'MR': float(r),
