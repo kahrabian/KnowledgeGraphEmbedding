@@ -75,16 +75,15 @@ def args():
 
 
 def event_index(tr_q):
-    tr_ix = defaultdict(list)
+    tr_ix = defaultdict(lambda: defaultdict(list))
     for s, r, o, t in tr_q:
-        tr_ix[s].append((t, r))
-        tr_ix[o].append((t, r))
+        tr_ix[s][r].append(t)
+        tr_ix[o][r].append(t)
 
-    ix = defaultdict(list)
+    ix = defaultdict(lambda: defaultdict(list))
     for k in tr_ix:
-        es = sorted(set(tr_ix[k]))
-        ix[k] = list(map(lambda x: x[0], es))
-        ix[-k - 1] = list(map(lambda x: x[1], es))
+        for r in tr_ix[k]:
+            ix[k][r] = sorted(set(tr_ix[k][r]))
 
     return ix
 
