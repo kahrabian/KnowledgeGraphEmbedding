@@ -1,3 +1,14 @@
 checkpoint
 *.npy
 *.log
+*.ipynb
+
+.vscode
+.ipynb_checkpoints
+**/__pycache__
+models
+data
+runs
+logs
+
+run.sh

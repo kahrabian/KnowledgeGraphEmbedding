@@ -1,315 +1,256 @@
-#!/usr/bin/python3
-
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import bisect
+import calendar
 import pytz
 from datetime import datetime
 
 import numpy as np
 import torch
-
 from torch.utils.data import Dataset
 
 
 class TrainDataset(Dataset):
-    _day = 24 * 3600
+    @staticmethod
+    def _frq(tup, start=4):
+        frq = {}
+        for s, r, o, _ in tup:
+            if (s, r) not in frq:
+                frq[(s, r)] = start
+            else:
+                frq[(s, r)] += 1
 
-    def __init__(self, quadruples, nentity, nrelation, negative_sample_size, negative_time_sample_size, mode,
-                 type_index, type_reverse_index, event_index, eval_only):
-        self.len = len(quadruples)
-        self.quadruples = quadruples
-        self.quadruple_set = set(quadruples)
-        self.nentity = nentity
-        self.nrelation = nrelation
-        self.negative_sample_size = negative_sample_size
-        self.negative_time_sample_size = negative_time_sample_size
-        self.mode = mode
-        self.count = self.count_frequency(quadruples)
-        self.true_head, self.true_tail = self.get_true_head_and_tail(self.quadruples)
-        self.type_index = type_index
-        self.type_reverse_index = type_reverse_index
-        self.event_index = event_index
-        self.eval_only = eval_only
+            if (o, -r - 1) not in frq:
+                frq[(o, -r - 1)] = start
+            else:
+                frq[(o, -r - 1)] += 1
+        return frq
 
-        self.tz = pytz.timezone('America/Montreal')
-        self.min_day = min(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
-        self.max_day = max(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+    @staticmethod
+    def _true_s_o(tup):
+        true_s = {}
+        true_o = {}
+
+        for s, r, o, _ in tup:
+            if (s, r) not in true_o:
+                true_o[(s, r)] = []
+            true_o[(s, r)].append(o)
+            if (r, o) not in true_s:
+                true_s[(r, o)] = []
+            true_s[(r, o)].append(s)
+
+        for r, o in true_s:
+            true_s[(r, o)] = np.array(list(set(true_s[(r, o)])))
+        for s, r in true_o:
+            true_o[(s, r)] = np.array(list(set(true_o[(s, r)])))
+
+        return true_s, true_o
+
+    def __init__(self, tup, tp_ix, tp_rix, ev_ix, md, args):
+        self.tup = tup
+        self.md = md
+
+        self.nentity = args.nentity
+        self.neg_sz = args.negative_sample_size
+        self.neg_t_sz = args.negative_time_sample_size
+
+        self.frq = self._frq(tup)
+        self.true_s, self.true_o = self._true_s_o(self.tup)
+
+        self.neg_tp_smpl = args.negative_type_sampling
+
+        self.tp_ix = tp_ix
+        self.tp_rix = tp_rix
+        self.ev_ix = ev_ix
+
+        self.tz = pytz.timezone('America/Montreal')  # pytz.utc
+        self.min_ts = min(map(lambda x: x[3], self.tup))
+        self.max_ts = max(map(lambda x: x[3], self.tup))
+
+        self.max_t_gap = args.negative_max_time_gap
 
     def __len__(self):
-        return self.len
+        return len(self.tup)
 
-    def lt(self, entity, timestamp, time_gap=None):
-        if time_gap is None:
-            time_gap = np.random.randint(1, 4)  # NOTE: Make a time gap to mimic the test queries
-        timestamp -= time_gap * self._day
-        relative_time_index = bisect.bisect_left(self.event_index[entity], timestamp)
-        if relative_time_index != 0:
-            return (timestamp - self.event_index[entity][relative_time_index - 1]) // self._day + 1
-        return 0
+    def _lt(self, e, ts, t_gap=None):
+        t_gap = np.random.randint(0, self.max_t_gap + 1) if t_gap is None else t_gap
+        ts -= t_gap
+        rel_ev_ix = bisect.bisect_left(self.ev_ix[e], ts)
+        rel_ts = (ts - self.ev_ix[e][rel_ev_ix - 1]) if rel_ev_ix != 0 else self.max_t_gap
+        return rel_ts // (24 * 60 * 60)
 
-    def __getitem__(self, idx):
-        head, relation, tail, timestamp = self.quadruples[idx]
+    def _neg(self, s, r, o, t):
+        neg_list = []
+        neg_size = 0
 
-        day = datetime.fromtimestamp(timestamp, self.tz).day
-
-        time_gap = np.random.randint(1, 4)
-        head_relative = self.lt(head, timestamp, time_gap=time_gap)
-        tail_relative = self.lt(tail, timestamp, time_gap=time_gap)
-
-        subsampling_weight = self.count[(head, relation)] + self.count[(tail, -relation-1)]
-        subsampling_weight = torch.sqrt(1 / torch.Tensor([subsampling_weight]))
-
-        negative_sample_list = []
-        negative_sample_size = 0
-
-        while negative_sample_size < self.negative_sample_size:
-            if self.eval_only or self.type_index is None:
-                negative_sample = np.random.randint(self.nentity, size=self.negative_sample_size*2)
+        while neg_size < self.neg_sz:
+            if not self.neg_tp_smpl:
+                neg = np.random.randint(self.nentity, size=self.neg_sz * 2)
             else:
-                if self.mode == 'head-batch':
-                    sample_space = self.type_index[self.type_reverse_index[head]]
-                elif self.mode == 'tail-batch':
-                    sample_space = self.type_index[self.type_reverse_index[tail]]
-                negative_sample = np.random.choice(sample_space, size=self.negative_sample_size*2)
-            if self.mode == 'head-batch':
-                mask = np.in1d(
-                    negative_sample,
-                    self.true_head[(relation, tail)],
-                    assume_unique=True,
-                    invert=True
-                )
-            elif self.mode == 'tail-batch':
-                mask = np.in1d(
-                    negative_sample,
-                    self.true_tail[(head, relation)],
-                    assume_unique=True,
-                    invert=True
-                )
-            else:
-                raise ValueError('Training batch mode %s not supported' % self.mode)
-            negative_sample = negative_sample[mask]
-            negative_sample_list.append(negative_sample)
-            negative_sample_size += negative_sample.size
+                if self.md == 's':
+                    ss = self.tp_ix[self.tp_rix[s]]
+                elif self.md == 'o':
+                    ss = self.tp_ix[self.tp_rix[o]]
+                neg = np.random.choice(ss, size=self.neg_sz * 2)
+            if self.md == 's':
+                msk = np.in1d(neg, self.true_s[(r, o)], assume_unique=True, invert=True)
+            elif self.md == 'o':
+                msk = np.in1d(neg, self.true_o[(s, r)], assume_unique=True, invert=True)
+            neg = neg[msk]
+            neg_list.append(neg)
+            neg_size += neg.size
 
-        if len(negative_sample_list) != 0:
-            negative_sample = np.concatenate(negative_sample_list)[:self.negative_sample_size]
-            negative_sample_relative = np.apply_along_axis(
-                lambda x: self.lt(x[0], timestamp), 0, negative_sample.reshape(1, -1))
-        else:
-            negative_sample = np.array([], dtype=np.int64)
-            negative_sample_relative = np.array([], dtype=np.int64)
+        neg = np.array([], dtype=np.int64)
+        neg_rel = np.array([], dtype=np.int64)
+        if len(neg_list) != 0:
+            neg = np.concatenate(neg_list)[:self.neg_sz]
+            neg_rel = np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1))
 
-        negative_time_sample_list = []
-        negative_time_sample_size = 0
+        return torch.from_numpy(neg), torch.from_numpy(neg_rel)
 
-        while negative_time_sample_size < self.negative_time_sample_size:
-            negative_time_sample = np.random.randint(
-                self.min_day, self.max_day + 1, size=self.negative_time_sample_size*2)
+    def _neg_abs(self, s, o, d, m):
+        neg_t_ls = []
+        neg_t_sz = 0
 
-            mask = negative_time_sample != day
+        while neg_t_sz < self.neg_t_sz:
+            neg_t = np.random.randint(self.min_ts, self.max_ts + 1, size=self.neg_t_sz * 2)
+            neg_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
+            neg_m = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
 
-            negative_time_sample = negative_time_sample[mask]
-            negative_time_sample_list.append(negative_time_sample)
-            negative_time_sample_size += negative_time_sample.size
+            neg_t = neg_t[(neg_d != d) | (neg_m != m)]
+            neg_t_ls.append(neg_t)
+            neg_t_sz += neg_t.size
 
-        if len(negative_time_sample_list) != 0:
-            negative_time_sample = np.concatenate(negative_time_sample_list)[:self.negative_time_sample_size]
-            negative_time_sample_head_relative = np.apply_along_axis(
-                lambda x: self.lt(head, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
-            negative_time_sample_tail_relative = np.apply_along_axis(
-                lambda x: self.lt(tail, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1))
-        else:
-            negative_time_sample = np.array([], dtype=np.int64)
-            negative_time_sample_head_relative = np.array([], dtype=np.int64)
-            negative_time_sample_tail_relative = np.array([], dtype=np.int64)
+        neg_abs = np.array([[], []], dtype=np.int64)
+        neg_abs_s_rel = np.array([], dtype=np.int64)
+        neg_abs_o_rel = np.array([], dtype=np.int64)
+        if len(neg_t_ls) != 0:
+            neg_t = np.concatenate(neg_t_ls)[:self.neg_t_sz]
+            neg_abs_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
+            neg_abs_m = np.apply_along_axis(
+                lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
+            neg_abs = np.stack([neg_abs_d, neg_abs_m])
+            neg_abs_s_rel = np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1))
+            neg_abs_o_rel = np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1))
 
-        negative_sample = torch.from_numpy(negative_sample)
-        negative_sample_relative = torch.from_numpy(negative_sample_relative)
+        return torch.from_numpy(neg_abs), torch.from_numpy(neg_abs_s_rel), torch.from_numpy(neg_abs_o_rel)
 
-        negative_time_sample = torch.from_numpy(negative_time_sample)
-        negative_time_sample_head_relative = torch.from_numpy(negative_time_sample_head_relative)
-        negative_time_sample_tail_relative = torch.from_numpy(negative_time_sample_tail_relative)
+    def __getitem__(self, ix):
+        s, r, o, t = self.tup[ix]
+        d = datetime.fromtimestamp(t, self.tz).day
+        m = datetime.fromtimestamp(t, self.tz).month
 
-        positive_sample = torch.LongTensor([head, relation, tail, day, head_relative, tail_relative])
+        t_gap = np.random.randint(0, self.max_t_gap + 1)
+        s_rel = self._lt(s, t, t_gap=t_gap)
+        o_rel = self._lt(o, t, t_gap=t_gap)
 
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            subsampling_weight, self.mode
+        smpl_w = torch.sqrt(1 / torch.Tensor([self.frq[(s, r)] + self.frq[(o, (-1) * r - 1)], ]))
 
-    @staticmethod
-    def collate_fn(data):
-        positive_sample = torch.stack([_[0] for _ in data], dim=0)
-        negative_sample = torch.stack([_[1] for _ in data], dim=0)
-        negative_time_sample = torch.stack([_[2] for _ in data], dim=0)
-        negative_sample_relative = torch.stack([_[3] for _ in data], dim=0)
-        negative_time_sample_head_relative = torch.stack([_[4] for _ in data], dim=0)
-        negative_time_sample_tail_relative = torch.stack([_[5] for _ in data], dim=0)
-        subsampling_weight = torch.cat([_[6] for _ in data], dim=0)
-        mode = data[0][7]
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            subsampling_weight, mode
+        neg, neg_rel = self._neg(s, r, o, t)
+        neg_abs, neg_abs_s_rel, neg_abs_o_rel = self._neg_abs(s, o, d, m)
 
-    @staticmethod
-    def count_frequency(quadruples, start=4):
-        '''
-        Get frequency of a partial quadruple like (head, relation) or (relation, tail)
-        The frequency will be used for subsampling like word2vec
-        '''
-        count = {}
-        for head, relation, tail, _ in quadruples:
-            if (head, relation) not in count:
-                count[(head, relation)] = start
-            else:
-                count[(head, relation)] += 1
+        pos = torch.LongTensor([s, r, o, d, m, s_rel, o_rel])
 
-            if (tail, -relation-1) not in count:
-                count[(tail, -relation-1)] = start
-            else:
-                count[(tail, -relation-1)] += 1
-        return count
-
-    @staticmethod
-    def get_true_head_and_tail(quadruples):
-        '''
-        Build a dictionary of true quadruples that will
-        be used to filter these true quadruples for negative sampling
-        '''
-
-        true_head = {}
-        true_tail = {}
-
-        for head, relation, tail, _ in quadruples:
-            if (head, relation) not in true_tail:
-                true_tail[(head, relation)] = []
-            true_tail[(head, relation)].append(tail)
-            if (relation, tail) not in true_head:
-                true_head[(relation, tail)] = []
-            true_head[(relation, tail)].append(head)
-
-        for relation, tail in true_head:
-            true_head[(relation, tail)] = np.array(list(set(true_head[(relation, tail)])))
-        for head, relation in true_tail:
-            true_tail[(head, relation)] = np.array(list(set(true_tail[(head, relation)])))
-
-        return true_head, true_tail
+        return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, smpl_w
 
 
 class TestDataset(Dataset):
-    _day = 24 * 3600
+    def __init__(self, tup, al_t, ev_ix, md, args):
+        self.tup = tup
+        self.md = md
 
-    def __init__(self, quadruples, all_true_quadruples, nentity, nrelation, event_index, mode):
-        self.len = len(quadruples)
-        self.quadruple_set = set(all_true_quadruples)
-        self.quadruples = quadruples
-        self.nentity = nentity
-        self.nrelation = nrelation
-        self.event_index = event_index
-        self.mode = mode
+        self.nentity = args.nentity
 
-        self.tz = pytz.timezone('America/Montreal')
-        self.min_day = min(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
-        self.max_day = max(map(lambda x: datetime.fromtimestamp(x[3], self.tz).day, self.quadruples))
+        self.ev_ix = ev_ix
+
+        self.tz = pytz.timezone('America/Montreal')  # pytz.utc
+        self.min_ts = min(map(lambda x: x[3], self.tup))
+        self.max_ts = max(map(lambda x: x[3], self.tup))
+
+        self.al_t = set()
+        for t in al_t:
+            ts = datetime.fromtimestamp(t[3], self.tz)
+            self.al_t.add((t[0], t[1], t[2], ts.day, ts.month))
+
+        self.max_t_gap = args.negative_max_time_gap
 
     def __len__(self):
-        return self.len
+        return len(self.tup)
 
-    def lt(self, entity, timestamp, time_gap=None):
-        if time_gap is None:
-            time_gap = np.random.randint(1, 4)  # NOTE: Make a time gap to mimic the test queries
-        timestamp -= time_gap * self._day
-        relative_time_index = bisect.bisect_left(self.event_index[entity], timestamp)
-        if relative_time_index != 0:
-            return (timestamp - self.event_index[entity][relative_time_index - 1]) // self._day + 1
-        return 0
+    def _lt(self, e, ts, t_gap=None):
+        t_gap = np.random.randint(0, self.max_t_gap + 1) if t_gap is None else t_gap
+        ts -= t_gap
+        rel_ev_ix = bisect.bisect_left(self.ev_ix[e], ts)
+        rel_ts = (ts - self.ev_ix[e][rel_ev_ix - 1]) if rel_ev_ix != 0 else self.max_t_gap
+        return rel_ts // (24 * 60 * 60)
 
-    def __getitem__(self, idx):
-        head, relation, tail, timestamp = self.quadruples[idx]
+    def __getitem__(self, ix):
+        s, r, o, t = self.tup[ix]
+        d = datetime.fromtimestamp(t, self.tz).day
+        m = datetime.fromtimestamp(t, self.tz).month
 
-        day = datetime.fromtimestamp(timestamp, self.tz).day
+        t_gap = np.random.randint(0, self.max_t_gap + 1)
+        s_rel = self._lt(s, t, t_gap=t_gap)
+        o_rel = self._lt(o, t, t_gap=t_gap)
 
-        time_gap = np.random.randint(1, 4)
-        head_relative = self.lt(head, timestamp, time_gap=time_gap)
-        tail_relative = self.lt(tail, timestamp, time_gap=time_gap)
+        if self.md == 's':
+            fil_b_neg = [(0, i) if (i, r, o, d, m) not in self.al_t else (-1, s) for i in range(self.nentity)]
+            fil_b_neg[s] = (0, s)
+        elif self.md == 'o':
+            fil_b_neg = [(0, i) if (s, r, i, d, m) not in self.al_t else (-1, o) for i in range(self.nentity)]
+            fil_b_neg[o] = (0, o)
+        elif self.md == 't':
+            fil_b_neg = []
+            min_dt = datetime.fromtimestamp(self.min_ts, self.tz)
+            max_dt = datetime.fromtimestamp(self.max_ts, self.tz)
+            for j in range(min_dt.month, max_dt.month + 1):
+                min_d = min_dt.day if m == min_dt.month else 1
+                max_d = max_dt.day if m == max_dt.month else calendar.monthlen(min_dt.year, m) + 1
+                for i in range(min_d, max_d + 1):
+                    ts = datetime(day=i, month=j, year=min_dt.year, tzinfo=self.tz).timestamp()
+                    if (s, r, o, i, j) not in self.al_t or (j == d and i == m):
+                        fil_b_neg.append((0, ts))
+                    else:
+                        fil_b_neg.append((-1, ts))
 
-        if self.mode == 'head-batch':
-            tmp = [(0, rand_head) if (rand_head, relation, tail, day) not in self.quadruple_set
-                   else (-1, head) for rand_head in range(self.nentity)]
-            tmp[head] = (0, head)
-        elif self.mode == 'tail-batch':
-            tmp = [(0, rand_tail) if (head, relation, rand_tail, day) not in self.quadruple_set
-                   else (-1, tail) for rand_tail in range(self.nentity)]
-            tmp[tail] = (0, tail)
-        elif self.mode == 'time':
-            tmp = [(0, rand_day) if (head, relation, tail, rand_day) not in self.quadruple_set
-                   else (-1, day) for rand_day in range(self.min_day, self.max_day + 1)]
-            tmp[day - self.min_day] = (0, day)
+        fil_b_neg = torch.LongTensor(fil_b_neg)
+        fil_b = fil_b_neg[:, 0].float()
+        if self.md != 't':
+            neg = fil_b_neg[:, 1]
+            neg_abs = torch.from_numpy(np.array([[], []], dtype=np.int64))
+
+            neg_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1)))
+            neg_abs_s_rel = torch.from_numpy(np.array([], dtype=np.int64))
+            neg_abs_o_rel = torch.from_numpy(np.array([], dtype=np.int64))
         else:
-            raise ValueError('negative batch mode %s not supported' % self.mode)
+            neg = torch.from_numpy(np.array([], dtype=np.int64))
+            neg_t = fil_b_neg[:, 1]
+            neg_abs_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
+            neg_abs_m = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
+            neg_abs = np.stack([neg_abs_d, neg_abs_m])
 
-        tmp = torch.LongTensor(tmp)
-        filter_bias = tmp[:, 0].float()
-        if self.mode != 'time':
-            negative_sample = tmp[:, 1]
-            negative_time_sample = torch.from_numpy(np.array([], dtype=np.int64))
+            neg_rel = torch.from_numpy(np.array([], dtype=np.int64))
+            neg_abs_s_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)))
+            neg_abs_o_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)))
 
-            negative_sample_relative = torch.from_numpy(np.apply_along_axis(
-                lambda x: self.lt(x[0], timestamp), 0, negative_sample.reshape(1, -1)))
-            negative_time_sample_head_relative = negative_time_sample = torch.from_numpy(np.array([], dtype=np.int64))
-            negative_time_sample_tail_relative = negative_time_sample = torch.from_numpy(np.array([], dtype=np.int64))
-        else:
-            negative_sample = torch.from_numpy(np.array([], dtype=np.int64))
-            negative_time_sample = tmp[:, 1:3]
+        pos = torch.LongTensor((s, r, o, d, m, s_rel, o_rel))
 
-            negative_sample_relative = torch.from_numpy(np.array([], dtype=np.int64))
-            negative_time_sample_head_relative = torch.from_numpy(np.apply_along_axis(
-                lambda x: self.lt(head, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1)))
-            negative_time_sample_tail_relative = torch.from_numpy(np.apply_along_axis(
-                lambda x: self.lt(tail, 1575090000 + x[0] * self._day), 0, negative_time_sample.reshape(1, -1)))
-
-        positive_sample = torch.LongTensor((head, relation, tail, day, head_relative, tail_relative))
-
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            filter_bias, self.mode
-
-    @staticmethod
-    def collate_fn(data):
-        positive_sample = torch.stack([_[0] for _ in data], dim=0)
-        negative_sample = torch.stack([_[1] for _ in data], dim=0)
-        negative_time_sample = torch.stack([_[2] for _ in data], dim=0)
-        negative_sample_relative = torch.stack([_[3] for _ in data], dim=0)
-        negative_time_sample_head_relative = torch.stack([_[4] for _ in data], dim=0)
-        negative_time_sample_tail_relative = torch.stack([_[5] for _ in data], dim=0)
-        filter_bias = torch.stack([_[6] for _ in data], dim=0)
-        mode = data[0][7]
-        return positive_sample, negative_sample, negative_time_sample, \
-            negative_sample_relative, negative_time_sample_head_relative, negative_time_sample_tail_relative, \
-            filter_bias, mode
+        return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b
 
 
 class BidirectionalOneShotIterator(object):
-    def __init__(self, dataloader_head, dataloader_tail):
-        self.iterator_head = self.one_shot_iterator(dataloader_head)
-        self.iterator_tail = self.one_shot_iterator(dataloader_tail)
-        self.step = 0
+    @staticmethod
+    def it(dl):
+        while True:
+            for d in dl:
+                yield d
+
+    def __init__(self, dl_s, dl_o):
+        self.stp = 1
+        self.it_s = self.it(dl_s)
+        self.it_o = self.it(dl_o)
 
     def __next__(self):
-        self.step += 1
-        if self.step % 2 == 0:
-            data = next(self.iterator_head)
+        self.stp += 1
+        if self.stp % 2 == 0:
+            return next(self.it_s) + ['s', ]
         else:
-            data = next(self.iterator_tail)
-        return data
-
-    @staticmethod
-    def one_shot_iterator(dataloader):
-        '''
-        Transform a PyTorch Dataloader into python iterator
-        '''
-        while True:
-            for data in dataloader:
-                yield data
+            return next(self.it_o) + ['o', ]
