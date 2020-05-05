@@ -55,7 +55,9 @@ def main(args):
 
     logging.info('Model Parameter Configuration:')
     for name, param in mdl.named_parameters():
-        logging.info(f'Parameter {name}: {param.size()}, require_grad = {param.requires_grad}')
+        if '_nn' not in name:
+            logging.info(f'Parameter {name}: {param.size()}, require_grad = {param.requires_grad}')
+    logging.info(f'Neural Networks: {mdl.module}')
 
     ev_ix = ut.event_index(tr_q)
 

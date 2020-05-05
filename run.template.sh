@@ -21,12 +21,13 @@ SAVE=models/${DATASET}_${SLURM_JOB_ID}
 python -u codes/run.py \
     --dataset data/$DATASET \
     --model RotatE \
-    --static_dim 384 \
-    --absolute_dim 128 \
-    --relative_dim 1 \
+    --static_dim 128 \
+    --absolute_dim 256 \
+    --relative_dim 128,128,128 \
+    --dropout 0.2 \
     --gamma 6.0 \
-    --epsilon 10.0 \
     --alpha 0.5 \
+    --lmbda 0.0 \
     --learning_rate 0.00003 \
     --negative_sample_size 256 \
     --negative_time_sample_size 8 \

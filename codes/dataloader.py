@@ -49,6 +49,7 @@ class TrainDataset(Dataset):
         self.md = md
 
         self.nentity = args.nentity
+        self.nrelation = args.nrelation
         self.neg_sz = args.negative_sample_size
         self.neg_t_sz = args.negative_time_sample_size
 
@@ -73,9 +74,11 @@ class TrainDataset(Dataset):
     def _lt(self, e, ts, t_gap=None):
         t_gap = np.random.randint(0, self.max_t_gap + 1) if t_gap is None else t_gap
         ts -= t_gap
-        rel_ev_ix = bisect.bisect_left(self.ev_ix[e], ts)
-        rel_ts = (ts - self.ev_ix[e][rel_ev_ix - 1]) if rel_ev_ix != 0 else self.max_t_gap
-        return rel_ts // (24 * 60 * 60)
+        rel_ts = []
+        for i in range(self.nrelation):
+            rel_ev_ix = bisect.bisect_left(self.ev_ix[e][i], ts) - 1
+            rel_ts.append((ts - (self.ev_ix[e][i][rel_ev_ix] if rel_ev_ix != -1 else self.min_ts)) // (24 * 60 * 60))
+        return rel_ts
 
     def _neg(self, s, r, o, t):
         neg_list = []
@@ -102,7 +105,7 @@ class TrainDataset(Dataset):
         neg_rel = np.array([], dtype=np.int64)
         if len(neg_list) != 0:
             neg = np.concatenate(neg_list)[:self.neg_sz]
-            neg_rel = np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1))
+            neg_rel = np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1)).T
 
         return torch.from_numpy(neg), torch.from_numpy(neg_rel)
 
@@ -128,8 +131,8 @@ class TrainDataset(Dataset):
             neg_abs_m = np.apply_along_axis(
                 lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
             neg_abs = np.stack([neg_abs_d, neg_abs_m])
-            neg_abs_s_rel = np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1))
-            neg_abs_o_rel = np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1))
+            neg_abs_s_rel = np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)).T
+            neg_abs_o_rel = np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)).T
 
         return torch.from_numpy(neg_abs), torch.from_numpy(neg_abs_s_rel), torch.from_numpy(neg_abs_o_rel)
 
@@ -147,7 +150,7 @@ class TrainDataset(Dataset):
         neg, neg_rel = self._neg(s, r, o, t)
         neg_abs, neg_abs_s_rel, neg_abs_o_rel = self._neg_abs(s, o, d, m)
 
-        pos = torch.LongTensor([s, r, o, d, m, s_rel, o_rel])
+        pos = torch.LongTensor([s, r, o, d, m, *s_rel, *o_rel])
 
         return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, smpl_w
 
@@ -158,6 +161,7 @@ class TestDataset(Dataset):
         self.md = md
 
         self.nentity = args.nentity
+        self.nrelation = args.nrelation
 
         self.ev_ix = ev_ix
 
@@ -178,9 +182,11 @@ class TestDataset(Dataset):
     def _lt(self, e, ts, t_gap=None):
         t_gap = np.random.randint(0, self.max_t_gap + 1) if t_gap is None else t_gap
         ts -= t_gap
-        rel_ev_ix = bisect.bisect_left(self.ev_ix[e], ts)
-        rel_ts = (ts - self.ev_ix[e][rel_ev_ix - 1]) if rel_ev_ix != 0 else self.max_t_gap
-        return rel_ts // (24 * 60 * 60)
+        rel_ts = []
+        for i in range(self.nrelation):
+            rel_ev_ix = bisect.bisect_left(self.ev_ix[e][i], ts) - 1
+            rel_ts.append((ts - (self.ev_ix[e][i][rel_ev_ix] if rel_ev_ix != -1 else self.min_ts)) // (24 * 60 * 60))
+        return rel_ts
 
     def __getitem__(self, ix):
         s, r, o, t = self.tup[ix]

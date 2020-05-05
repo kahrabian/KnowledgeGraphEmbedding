@@ -30,10 +30,12 @@ def args():
     # Hyper-parameters
     parser.add_argument('--static_dim', default=256, type=int)
     parser.add_argument('--absolute_dim', default=256, type=int)
-    parser.add_argument('--relative_dim', default=256, type=int)
+    parser.add_argument('--relative_dim', default='256,256,256', type=str)
+    parser.add_argument('--relative_relation_dim', default=256, type=int)
+
+    parser.add_argument('--dropout', default=0.5, type=float)
 
     parser.add_argument('--gamma', default=6.0, type=float)
-    parser.add_argument('--epsilon', default=10.0, type=float)
     parser.add_argument('--alpha', default=0.5, type=float)
     parser.add_argument('--lmbda', default=0.0, type=float)
 
@@ -75,16 +77,15 @@ def args():
 
 
 def event_index(tr_q):
-    tr_ix = defaultdict(list)
+    tr_ix = defaultdict(lambda: defaultdict(list))
     for s, r, o, t in tr_q:
-        tr_ix[s].append((t, r))
-        tr_ix[o].append((t, r))
+        tr_ix[s][r].append(t)
+        tr_ix[o][r].append(t)
 
-    ix = defaultdict(list)
+    ix = defaultdict(lambda: defaultdict(list))
     for k in tr_ix:
-        es = sorted(set(tr_ix[k]))
-        ix[k] = list(map(lambda x: x[0], es))
-        ix[-k - 1] = list(map(lambda x: x[1], es))
+        for r in tr_ix[k]:
+            ix[k][r] = sorted(set(tr_ix[k][r]))
 
     return ix
 
