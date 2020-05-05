@@ -220,179 +220,301 @@ class KGEModel(nn.Module):
 
         return getattr(self, self.mdl_nm)(s, r, o, s_t, o_t, t_neg, md)
 
-    def TransE(self, head, relation, tail, head_time, tail_time, mode):
-        head = torch.cat([head, head_time], dim=2)
-        tail = torch.cat([tail, tail_time], dim=2)
+    def TransE(self, s, r, o, s_t, o_t, t_neg, md):
+        if md != 't':
+            s = torch.cat([s, s_t], dim=2)
+            o = torch.cat([o, o_t], dim=2)
 
-        if mode == 's':
-            score = head + (relation - tail)
+        if md is not None:
+            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1), t_neg[2]], dim=2)
+            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1), t_neg[3]], dim=2)
+            r_neg = r.repeat(1, s_neg.size(1), 1)
+
+        if md == 's':
+            sc_neg = s_neg + (r_neg - o_neg)
+            sc = s + (r - o)
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 'o':
+            sc_neg = (s_neg + r_neg) - o_neg
+            sc = (s + r) - o
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 't':
+            sc_neg = (s_neg + r_neg) - o_neg
+
+            sc = sc_neg
         else:
-            score = (head + relation) - tail
+            sc = (s + r) - o
 
-        score = self.gamma.item() - torch.norm(score, p=1, dim=2)
-        return score
+        sc = self.gamma.item() - torch.norm(sc, p=1, dim=2)
+        return sc
 
-    def DistMult(self, head, relation, tail, head_time, tail_time, mode):
-        head = torch.cat([head, head_time], dim=2)
-        tail = torch.cat([tail, tail_time], dim=2)
+    def DistMult(self, s, r, o, s_t, o_t, t_neg, md):
+        if md != 't':
+            s = torch.cat([s, s_t], dim=2)
+            o = torch.cat([o, o_t], dim=2)
 
-        if mode == 's':
-            score = head * (relation * tail)
+        if md is not None:
+            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1), t_neg[2]], dim=2)
+            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1), t_neg[3]], dim=2)
+            r_neg = r.repeat(1, s_neg.size(1), 1)
+
+        if md == 's':
+            sc_neg = s_neg * (r_neg * o_neg)
+            sc = s * (r * o)
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 'o':
+            sc_neg = (s_neg * r_neg) * o_neg
+            sc = (s * r) * o
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 't':
+            sc_neg = s_neg * (r_neg * o_neg)
+
+            sc = sc_neg
         else:
-            score = (head * relation) * tail
+            sc = (s * r) * o
 
-        score = score.sum(dim=2)
-        return score
+        sc = sc.sum(dim=2)
+        return sc
 
-    def ComplEx(self, head, relation, tail, head_time, tail_time, mode):
-        re_head, im_head = torch.chunk(head, 2, dim=2)
-        re_relation, im_relation = torch.chunk(relation, 2, dim=2)
-        re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+    def ComplEx(self, s, r, o, s_t, o_t, t_neg, md):
+        if md != 't':
+            re_s, im_s = torch.chunk(s, 2, dim=2)
+            re_o, im_o = torch.chunk(o, 2, dim=2)
 
-        re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
-        re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+        if md != 't':
+            re_s_t, im_s_t = torch.chunk(s_t, 2, dim=2)
+            re_o_t, im_o_t = torch.chunk(o_t, 2, dim=2)
 
-        re_head = torch.cat([re_head, re_head_time], dim=2)
-        im_head = torch.cat([im_head, im_head_time], dim=2)
+        if md is not None:
+            re_s_t_neg, im_s_t_neg = torch.chunk(t_neg[2], 2, dim=2)
+            re_o_t_neg, im_o_t_neg = torch.chunk(t_neg[3], 2, dim=2)
 
-        re_tail = torch.cat([re_tail, re_tail_time], dim=2)
-        im_tail = torch.cat([im_tail, im_tail_time], dim=2)
+        if md is not None:
+            re_true_s, im_true_s = torch.chunk(t_neg[0], 2, dim=2)
+            re_s_neg = torch.cat([re_true_s.repeat(1, re_s_t_neg.size(1), 1), re_s_t_neg], dim=2)
+            im_s_neg = torch.cat([im_true_s.repeat(1, im_s_t_neg.size(1), 1), im_s_t_neg], dim=2)
 
-        if mode == 's':
-            re_score = re_relation * re_tail + im_relation * im_tail
-            im_score = re_relation * im_tail - im_relation * re_tail
-            score = re_head * re_score + im_head * im_score
+        if md != 't':
+            re_s = torch.cat([re_s, re_s_t], dim=2)
+            im_s = torch.cat([im_s, im_s_t], dim=2)
+
+        if md is not None:
+            re_true_o, im_true_o = torch.chunk(t_neg[1], 2, dim=2)
+            re_o_neg = torch.cat([re_true_o.repeat(1, re_o_t_neg.size(1), 1), re_o_t_neg], dim=2)
+            im_o_neg = torch.cat([re_true_o.repeat(1, im_o_t_neg.size(1), 1), im_o_t_neg], dim=2)
+
+        if md != 't':
+            re_o = torch.cat([re_o, re_o_t], dim=2)
+            im_o = torch.cat([im_o, im_o_t], dim=2)
+
+        re_r, im_r = torch.chunk(r, 2, dim=2)
+
+        if md is not None:
+            re_r_neg = re_r.repeat(1, re_s_neg.size(1), 1)
+            im_r_neg = im_r.repeat(1, im_o_neg.size(1), 1)
+
+        if md == 's':
+            re_sc = re_r * re_o + im_r * im_o
+            im_sc = re_r * im_o - im_r * re_o
+            sc = re_s * re_sc + im_s * im_sc
+
+            re_sc_neg = re_r_neg * re_o_neg + im_r_neg * im_o_neg
+            im_sc_neg = re_r_neg * im_o_neg - im_r_neg * re_o_neg
+            sc_neg = re_s_neg * re_sc_neg + im_s_neg * im_sc_neg
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 'o':
+            re_sc = re_s * re_r - im_s * im_r
+            im_sc = re_s * im_r + im_s * re_r
+            sc = re_sc * re_o + im_sc * im_o
+
+            re_sc_neg = re_s_neg * re_r_neg - im_s_neg * im_r_neg
+            im_sc_neg = re_s_neg * im_r_neg + im_s_neg * re_r_neg
+            sc_neg = re_sc_neg * re_o_neg + im_sc_neg * im_o_neg
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 't':
+            re_sc_neg = re_s_neg * re_r_neg - im_s_neg * im_r_neg
+            im_sc_neg = re_s_neg * im_r_neg + im_s_neg * re_r_neg
+            sc_neg = re_sc_neg * re_o_neg + im_sc_neg * im_o_neg
+
+            sc = sc_neg
         else:
-            re_score = re_head * re_relation - im_head * im_relation
-            im_score = re_head * im_relation + im_head * re_relation
-            score = re_score * re_tail + im_score * im_tail
+            re_sc = re_s * re_r - im_s * im_r
+            im_sc = re_s * im_r + im_s * re_r
+            sc = re_sc * re_o + im_sc * im_o
 
-        score = score.sum(dim=2)
-        return score
+        sc = sc.sum(dim=2)
+        return sc
 
-    def RotatE(self, head, relation, tail, head_time, tail_time, time_neg, mode):
+    def RotatE(self, s, r, o, s_t, o_t, t_neg, md):
         pi = 3.14159265358979323846
 
-        if mode != 't':
-            re_head, im_head = torch.chunk(head, 2, dim=2)
-            re_tail, im_tail = torch.chunk(tail, 2, dim=2)
+        if md != 't':
+            re_s, im_s = torch.chunk(s, 2, dim=2)
+            re_o, im_o = torch.chunk(o, 2, dim=2)
 
-        if mode != 't':
-            re_head_time, im_head_time = torch.chunk(head_time, 2, dim=2)
-            re_tail_time, im_tail_time = torch.chunk(tail_time, 2, dim=2)
+        if md != 't':
+            re_s_t, im_s_t = torch.chunk(s_t, 2, dim=2)
+            re_o_t, im_o_t = torch.chunk(o_t, 2, dim=2)
 
-        if mode is not None:
-            re_head_time_neg, im_head_time_neg = torch.chunk(time_neg[2], 2, dim=2)
-            re_tail_time_neg, im_tail_time_neg = torch.chunk(time_neg[3], 2, dim=2)
+        if md is not None:
+            re_s_t_neg, im_s_t_neg = torch.chunk(t_neg[2], 2, dim=2)
+            re_o_t_neg, im_o_t_neg = torch.chunk(t_neg[3], 2, dim=2)
 
-        if mode is not None:
-            re_true_head, im_true_head = torch.chunk(time_neg[0], 2, dim=2)
-            re_head_neg = torch.cat([re_true_head.repeat(1, re_head_time_neg.size(1), 1), re_head_time_neg], dim=2)
-            im_head_neg = torch.cat([im_true_head.repeat(1, im_head_time_neg.size(1), 1), im_head_time_neg], dim=2)
+        if md is not None:
+            re_true_s, im_true_s = torch.chunk(t_neg[0], 2, dim=2)
+            re_s_neg = torch.cat([re_true_s.repeat(1, re_s_t_neg.size(1), 1), re_s_t_neg], dim=2)
+            im_s_neg = torch.cat([im_true_s.repeat(1, im_s_t_neg.size(1), 1), im_s_t_neg], dim=2)
 
-        if mode != 't':
-            re_head = torch.cat([re_head, re_head_time], dim=2)
-            im_head = torch.cat([im_head, im_head_time], dim=2)
+        if md != 't':
+            re_s = torch.cat([re_s, re_s_t], dim=2)
+            im_s = torch.cat([im_s, im_s_t], dim=2)
 
-        if mode is not None:
-            re_true_tail, im_true_tail = torch.chunk(time_neg[1], 2, dim=2)
-            re_tail_neg = torch.cat([re_true_tail.repeat(1, re_tail_time_neg.size(1), 1), re_tail_time_neg], dim=2)
-            im_tail_neg = torch.cat([re_true_tail.repeat(1, im_tail_time_neg.size(1), 1), im_tail_time_neg], dim=2)
+        if md is not None:
+            re_true_o, im_true_o = torch.chunk(t_neg[1], 2, dim=2)
+            re_o_neg = torch.cat([re_true_o.repeat(1, re_o_t_neg.size(1), 1), re_o_t_neg], dim=2)
+            im_o_neg = torch.cat([re_true_o.repeat(1, im_o_t_neg.size(1), 1), im_o_t_neg], dim=2)
 
-        if mode != 't':
-            re_tail = torch.cat([re_tail, re_tail_time], dim=2)
-            im_tail = torch.cat([im_tail, im_tail_time], dim=2)
+        if md != 't':
+            re_o = torch.cat([re_o, re_o_t], dim=2)
+            im_o = torch.cat([im_o, im_o_t], dim=2)
 
-        # Make phases of relations uniformly distributed in [-pi, pi]
+        p_r = r / (self.emb_rng.item() / pi)
 
-        phase_relation = relation/(self.emb_rng.item()/pi)
+        re_r = torch.cos(p_r)
+        im_r = torch.sin(p_r)
 
-        re_relation = torch.cos(phase_relation)
-        im_relation = torch.sin(phase_relation)
+        if md is not None:
+            re_r_neg = re_r.repeat(1, re_s_neg.size(1), 1)
+            im_r_neg = im_r.repeat(1, im_o_neg.size(1), 1)
 
-        if mode is not None:
-            re_relation_neg = re_relation.repeat(1, re_head_neg.size(1), 1)
-            im_relation_neg = im_relation.repeat(1, im_tail_neg.size(1), 1)
+        if md == 's':
+            re_sc = re_r * re_o + im_r * im_o
+            im_sc = re_r * im_o - im_r * re_o
+            re_sc = re_sc - re_s
+            im_sc = im_sc - im_s
 
-        if mode == 's':
-            re_score = re_relation * re_tail + im_relation * im_tail
-            im_score = re_relation * im_tail - im_relation * re_tail
-            re_score = re_score - re_head
-            im_score = im_score - im_head
+            re_sc_neg = re_r_neg * re_o_neg + im_r_neg * im_o_neg
+            im_sc_neg = re_r_neg * im_o_neg - im_r_neg * re_o_neg
+            re_sc_neg = re_sc_neg - re_s_neg
+            im_sc_neg = im_sc_neg - im_s_neg
 
-            re_score_neg = re_relation_neg * re_tail_neg + im_relation_neg * im_tail_neg
-            im_score_neg = re_relation_neg * im_tail_neg - im_relation_neg * re_tail_neg
-            re_score_neg = re_score_neg - re_head_neg
-            im_score_neg = im_score_neg - im_head_neg
+            if re_sc.size(1) > 0 and re_sc_neg.size(1) > 0:
+                re_sc = torch.cat([re_sc, re_sc_neg], dim=1)
+            elif re_sc_neg.size(1) > 0:
+                re_sc = re_sc_neg
 
-            if re_score.size(1) > 0 and re_score_neg.size(1) > 0:
-                re_score = torch.cat([re_score, re_score_neg], dim=1)
-            elif re_score_neg.size(1) > 0:
-                re_score = re_score_neg
+            if im_sc.size(1) > 0 and im_sc_neg.size(1) > 0:
+                im_sc = torch.cat([im_sc, im_sc_neg], dim=1)
+            elif im_sc_neg.size(1) > 0:
+                im_sc = im_sc_neg
+        elif md == 'o':
+            re_sc = re_s * re_r - im_s * im_r
+            im_sc = re_s * im_r + im_s * re_r
+            re_sc = re_sc - re_o
+            im_sc = im_sc - im_o
 
-            if im_score.size(1) > 0 and im_score_neg.size(1) > 0:
-                im_score = torch.cat([im_score, im_score_neg], dim=1)
-            elif im_score_neg.size(1) > 0:
-                im_score = im_score_neg
-        elif mode == 'o':
-            re_score = re_head * re_relation - im_head * im_relation
-            im_score = re_head * im_relation + im_head * re_relation
-            re_score = re_score - re_tail
-            im_score = im_score - im_tail
+            re_sc_neg = re_s_neg * re_r_neg - im_s_neg * im_r_neg
+            im_sc_neg = im_s_neg * re_r_neg + re_s_neg * im_r_neg
+            re_sc_neg = re_sc_neg - re_o_neg
+            im_sc_neg = im_sc_neg - im_o_neg
 
-            re_score_neg = re_head_neg * re_relation_neg - im_head_neg * im_relation_neg
-            im_score_neg = im_head_neg * re_relation_neg + re_head_neg * im_relation_neg
-            re_score_neg = re_score_neg - re_tail_neg
-            im_score_neg = im_score_neg - im_tail_neg
+            if re_sc.size(1) > 0 and re_sc_neg.size(1) > 0:
+                re_sc = torch.cat([re_sc, re_sc_neg], dim=1)
+            elif re_sc_neg.size(1) > 0:
+                re_sc = re_sc_neg
 
-            if re_score.size(1) > 0 and re_score_neg.size(1) > 0:
-                re_score = torch.cat([re_score, re_score_neg], dim=1)
-            elif re_score_neg.size(1) > 0:
-                re_score = re_score_neg
+            if im_sc.size(1) > 0 and im_sc_neg.size(1) > 0:
+                im_sc = torch.cat([im_sc, im_sc_neg], dim=1)
+            elif im_sc_neg.size(1) > 0:
+                im_sc = im_sc_neg
+        elif md == 't':
+            re_sc_neg = re_s_neg * re_r_neg - im_s_neg * im_r_neg
+            im_sc_neg = im_s_neg * re_r_neg + re_s_neg * im_r_neg
+            re_sc_neg = re_sc_neg - re_o_neg
+            im_sc_neg = im_sc_neg - im_o_neg
 
-            if im_score.size(1) > 0 and im_score_neg.size(1) > 0:
-                im_score = torch.cat([im_score, im_score_neg], dim=1)
-            elif im_score_neg.size(1) > 0:
-                im_score = im_score_neg
-        elif mode == 't':
-            re_score_neg = re_head_neg * re_relation_neg - im_head_neg * im_relation_neg
-            im_score_neg = im_head_neg * re_relation_neg + re_head_neg * im_relation_neg
-            re_score_neg = re_score_neg - re_tail_neg
-            im_score_neg = im_score_neg - im_tail_neg
-
-            re_score = re_score_neg
-            im_score = im_score_neg
+            re_sc = re_sc_neg
+            im_sc = im_sc_neg
         else:
-            re_score = re_head * re_relation - im_head * im_relation
-            im_score = re_head * im_relation + im_head * re_relation
-            re_score = re_score - re_tail
-            im_score = im_score - im_tail
+            re_sc = re_s * re_r - im_s * im_r
+            im_sc = re_s * im_r + im_s * re_r
+            re_sc = re_sc - re_o
+            im_sc = im_sc - im_o
 
-        score = torch.stack([re_score, im_score], dim=0)
-        score = score.norm(dim=0)
+        sc = torch.stack([re_sc, im_sc], dim=0)
+        sc = sc.norm(dim=0)
 
-        score = self.gamma.item() - score.sum(dim=2)
-        return score
+        sc = self.gamma.item() - sc.sum(dim=2)
+        return sc
 
-    def pRotatE(self, head, relation, tail, head_time, tail_time, mode):
+    def pRotatE(self, s, r, o, s_t, o_t, md):
         pi = 3.14159262358979323846
 
-        # Make phases of entities and relations uniformly distributed in [-pi, pi]
+        if md != 't':
+            s = torch.cat([s / (self.emb_rng.item() / pi), s_t], dim=2)
+            o = torch.cat([o / (self.emb_rng.item() / pi), o_t], dim=2)
 
-        phase_head = head/(self.emb_rng.item()/pi)
-        phase_relation = relation/(self.emb_rng.item()/pi)
-        phase_tail = tail/(self.emb_rng.item()/pi)
+        if md is not None:
+            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1), t_neg[2]], dim=2)
+            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1), t_neg[3]], dim=2)
 
-        if mode == 's':
-            score = phase_head + (phase_relation - phase_tail)
+        r = r / (self.emb_rng.item() / pi)
+
+        if md is not None:
+            r_neg = r.repeat(1, s_neg.size(1), 1)
+
+        if md == 's':
+            sc_neg = s_neg + (r_neg - o_neg)
+            sc = s + (r - o)
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 'o':
+            sc_neg = (s_neg + r_neg) - o_neg
+            sc = (s + r) - o
+
+            if sc.size(1) > 0 and sc_neg.size(1) > 0:
+                sc = torch.cat([sc, sc_neg], dim=1)
+            elif sc_neg.size(1) > 0:
+                sc = sc_neg
+        if md == 't':
+            sc_neg = (s_neg + r_neg) - o_neg
+
+            sc = sc_neg
         else:
-            score = (phase_head + phase_relation) - phase_tail
+            sc = (s + r) - o
 
-        score = torch.sin(score)
-        score = torch.abs(score)
+        sc = torch.sin(sc)
+        sc = torch.abs(sc)
 
-        score = self.gamma.item() - score.sum(dim=2) * self.mod
-        return score
+        sc = self.gamma.item() - sc.sum(dim=2) * self.mod
+        return sc
 
     @staticmethod
     def train_step(mdl, opt, tr_it, args):
