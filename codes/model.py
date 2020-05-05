@@ -86,13 +86,15 @@ class KGEModel(nn.Module):
         return d_amp * torch.sin(e_rel * d_frq + d_phi)
 
     def t_emb(self, e, d_abs, m_abs, e_rel):
-        re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs), 2, dim=1)
-        re_rel, im_rel = torch.chunk(self.rel_emb(e, e_rel), 2, dim=1)
+        if self.mdl_nm in ['RotatE', 'ComplEx']:
+            re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs), 2, dim=1)
+            re_rel, im_rel = torch.chunk(self.rel_emb(e, e_rel), 2, dim=1)
 
-        re_t = torch.cat([re_abs, re_rel], dim=1)
-        im_t = torch.cat([im_abs, im_rel], dim=1)
+            re_t = torch.cat([re_abs, re_rel], dim=1)
+            im_t = torch.cat([im_abs, im_rel], dim=1)
 
-        return torch.cat([re_t, im_t], dim=1)
+            return torch.cat([re_t, im_t], dim=1)
+        return torch.cat([self.abs_emb(e, d_abs, m_abs), self.rel_emb(e, e_rel)], dim=1)
 
     def forward(self, x, md=None):
         if md is None:
