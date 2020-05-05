@@ -23,7 +23,7 @@ class KGEModel(nn.Module):
         return nn.Sequential(*nn_seq)
 
     @staticmethod
-    def _init_nn(l):
+    def _nn_init(l):
         if isinstance(l, nn.Linear):
             nn.init.zeros_(l.bias)
             nn.init.kaiming_uniform_(l.weight)
@@ -74,9 +74,9 @@ class KGEModel(nn.Module):
         self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
         self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
         self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
-        self.rel_d_frq_nn.apply(self._init_nn)
-        self.rel_d_phi_nn.apply(self._init_nn)
-        self.rel_d_amp_nn.apply(self._init_nn)
+        self.rel_d_frq_nn.apply(self._nn_init)
+        self.rel_d_phi_nn.apply(self._nn_init)
+        self.rel_d_amp_nn.apply(self._nn_init)
 
         self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
         self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
