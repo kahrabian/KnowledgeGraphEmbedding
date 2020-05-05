@@ -30,10 +30,12 @@ def args():
     # Hyper-parameters
     parser.add_argument('--static_dim', default=256, type=int)
     parser.add_argument('--absolute_dim', default=256, type=int)
-    parser.add_argument('--relative_dim', default=256, type=int)
+    parser.add_argument('--relative_dim', default='256,256,256', type=str)
+    parser.add_argument('--relative_relation_dim', default=256, type=int)
+
+    parser.add_argument('--dropout', default=0.5, type=float)
 
     parser.add_argument('--gamma', default=6.0, type=float)
-    parser.add_argument('--epsilon', default=10.0, type=float)
     parser.add_argument('--alpha', default=0.5, type=float)
     parser.add_argument('--lmbda', default=0.0, type=float)
 
