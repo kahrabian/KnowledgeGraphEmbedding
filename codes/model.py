@@ -471,7 +471,7 @@ class KGEModel(nn.Module):
         sc = self.gamma.item() - sc.sum(dim=2)
         return sc
 
-    def pRotatE(self, s, r, o, s_t, o_t, md):
+    def pRotatE(self, s, r, o, s_t, o_t, t_neg, md):
         pi = 3.14159262358979323846
 
         if md != 't':
@@ -479,8 +479,8 @@ class KGEModel(nn.Module):
             o = torch.cat([o / (self.emb_rng.item() / pi), o_t], dim=2)
 
         if md is not None:
-            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1), t_neg[2]], dim=2)
-            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1), t_neg[3]], dim=2)
+            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1) / (self.emb_rng.item() / pi), t_neg[2]], dim=2)
+            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1) / (self.emb_rng.item() / pi), t_neg[3]], dim=2)
 
         r = r / (self.emb_rng.item() / pi)
 
