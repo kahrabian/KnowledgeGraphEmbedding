@@ -134,13 +134,7 @@ def logger(args):
     logging.basicConfig(format='%(asctime)s %(levelname)-8s %(message)s',
                         level=logging.INFO,
                         datefmt='%Y-%m-%d %H:%M:%S',
-                        filename=log_file,
-                        filemode='w')
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
-    console.setFormatter(formatter)
-    logging.getLogger('').addHandler(console)
+                        handlers=[logging.StreamHandler(), logging.FileHandler(log_file, mode='w')])
 
 
 def save(mdl, opt, var_ls, args):
