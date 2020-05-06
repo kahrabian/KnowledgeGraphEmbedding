@@ -100,9 +100,9 @@ class KGEModel(nn.Module):
         return d_amp * torch.sin(d * d_frq + d_phi) + m_amp * torch.sin(m * m_frq + m_phi)
 
     def rel_emb(self, e, e_rel):
-        d_amp = self.rel_d_amp_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), -1)
-        d_frq = self.rel_d_frq_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), -1)
-        d_phi = self.rel_d_phi_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), -1)
+        d_amp = self.rel_d_amp_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), self.rel_dim[0])
+        d_frq = self.rel_d_frq_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), self.rel_dim[0])
+        d_phi = self.rel_d_phi_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), self.rel_dim[0])
 
         e_ix = e.unsqueeze(1).repeat(1, e_rel.size(1)).contiguous().view(-1)
         e_emb = torch.index_select(self.e_emb, dim=0, index=e_ix)
