@@ -237,7 +237,7 @@ class TestDataset(Dataset):
             neg_abs_s_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)))
             neg_abs_o_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)))
 
-        pos = torch.LongTensor((s, r, o, d, m, s_rel, o_rel))
+        pos = torch.LongTensor((s, r, o, d, m, *s_rel, *o_rel))
 
         return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b
 
