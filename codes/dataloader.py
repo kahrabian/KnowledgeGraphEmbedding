@@ -123,7 +123,7 @@ class TrainDataset(Dataset):
             neg_t_ls.append(neg_t)
             neg_t_sz += neg_t.size
 
-        neg_abs = np.array([[], []], dtype=np.int64)
+        neg_abs = np.array([[], [], []], dtype=np.int64)
         neg_abs_s_rel = np.array([], dtype=np.int64)
         neg_abs_o_rel = np.array([], dtype=np.int64)
         if len(neg_t_ls) != 0:
@@ -224,7 +224,7 @@ class TestDataset(Dataset):
         fil_b = fil_b_neg[:, 0].float()
         if self.md != 't':
             neg = fil_b_neg[:, 1]
-            neg_abs = torch.from_numpy(np.array([[], []], dtype=np.int64))
+            neg_abs = torch.from_numpy(np.array([[], [], []], dtype=np.int64))
 
             neg_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1)))
             neg_abs_s_rel = torch.from_numpy(np.array([], dtype=np.int64))
