@@ -71,6 +71,13 @@ class KGEModel(nn.Module):
         nn.init.kaiming_uniform_(self.abs_m_phi_emb)
         nn.init.kaiming_uniform_(self.abs_m_amp_emb)
 
+        self.abs_y_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        self.abs_y_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        self.abs_y_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
+        nn.init.kaiming_uniform_(self.abs_y_frq_emb)
+        nn.init.kaiming_uniform_(self.abs_y_phi_emb)
+        nn.init.kaiming_uniform_(self.abs_y_amp_emb)
+
         self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
         self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
         self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
@@ -88,7 +95,7 @@ class KGEModel(nn.Module):
         if self.mdl_nm == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng.item()]]))
 
-    def abs_emb(self, e, d, m):
+    def abs_emb(self, e, d, m, y):
         d_amp = torch.index_select(self.abs_d_amp_emb, dim=0, index=e)
         d_frq = torch.index_select(self.abs_d_frq_emb, dim=0, index=e)
         d_phi = torch.index_select(self.abs_d_phi_emb, dim=0, index=e)
@@ -97,7 +104,15 @@ class KGEModel(nn.Module):
         m_frq = torch.index_select(self.abs_m_frq_emb, dim=0, index=e)
         m_phi = torch.index_select(self.abs_m_phi_emb, dim=0, index=e)
 
-        return d_amp * torch.sin(d * d_frq + d_phi) + m_amp * torch.sin(m * m_frq + m_phi)
+        y_amp = torch.index_select(self.abs_y_amp_emb, dim=0, index=e)
+        y_frq = torch.index_select(self.abs_y_frq_emb, dim=0, index=e)
+        y_phi = torch.index_select(self.abs_y_phi_emb, dim=0, index=e)
+
+        d_emb = d_amp * torch.sin(d * d_frq + d_phi)
+        m_emb = m_amp * torch.sin(m * m_frq + m_phi)
+        y_emb = y_amp * torch.sin(y * y_frq + y_phi)
+
+        return d_emb + m_emb + y_emb
 
     def rel_emb(self, e, e_rel):
         d_amp = self.rel_d_amp_emb.repeat(1, e.size(0)).contiguous().view(e.size(0) * e_rel.size(1), self.rel_dim[0])
@@ -115,29 +130,30 @@ class KGEModel(nn.Module):
 
         return rel_d_emb.view(e_rel.size(0), e_rel.size(1), self.rel_dim[-1]).sum(dim=1)
 
-    def t_emb(self, e, d_abs, m_abs, e_rel):
+    def t_emb(self, e, d_abs, m_abs, y_abs, e_rel):
         if self.mdl_nm in ['RotatE', 'ComplEx']:
-            re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs), 2, dim=1)
+            re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs, y_abs), 2, dim=1)
             re_rel, im_rel = torch.chunk(self.rel_emb(e, e_rel), 2, dim=1)
 
             re_t = torch.cat([re_abs, re_rel], dim=1)
             im_t = torch.cat([im_abs, im_rel], dim=1)
 
             return torch.cat([re_t, im_t], dim=1)
-        return torch.cat([self.abs_emb(e, d_abs, m_abs), self.rel_emb(e, e_rel)], dim=1)
+        return torch.cat([self.abs_emb(e, d_abs, m_abs, y_abs), self.rel_emb(e, e_rel)], dim=1)
 
     def forward(self, x, md=None):
         if md is None:
             d_abs = x[:, 3].view(-1, 1)
             m_abs = x[:, 4].view(-1, 1)
+            y_abs = x[:, 5].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=x[:, 0]).unsqueeze(1)
-            s_t = self.t_emb(x[:, 0], d_abs, m_abs, x[:, -self.nr * 2:-self.nr].view(-1, self.nr)).unsqueeze(1)
+            s_t = self.t_emb(x[:, 0], d_abs, m_abs, y_abs, x[:, -self.nr * 2:-self.nr].view(-1, self.nr)).unsqueeze(1)
 
             r = torch.index_select(self.r_emb, dim=0, index=x[:, 1]).unsqueeze(1)
 
             o = torch.index_select(self.e_emb, dim=0, index=x[:, 2]).unsqueeze(1)
-            o_t = self.t_emb(x[:, 2], d_abs, m_abs, x[:, -self.nr:].view(-1, self.nr)).unsqueeze(1)
+            o_t = self.t_emb(x[:, 2], d_abs, m_abs, y_abs, x[:, -self.nr:].view(-1, self.nr)).unsqueeze(1)
 
             t_neg = None
         elif md == 's':
@@ -145,28 +161,31 @@ class KGEModel(nn.Module):
 
             d_abs = pos[:, 3].view(-1, 1)
             m_abs = pos[:, 4].view(-1, 1)
+            y_abs = pos[:, 5].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=neg.view(-1)).view(neg.size(0), neg.size(1), self.stt_dim)
             s_t = self.t_emb(
                 neg.view(-1),
                 d_abs.repeat(neg.size(1), 1).contiguous(),
                 m_abs.repeat(neg.size(1), 1).contiguous(),
+                y_abs.repeat(neg.size(1), 1).contiguous(),
                 neg_rel.view(-1, self.nr)
             ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim[-1])
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
 
             o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
-            o_t = self.t_emb(pos[:, 2], d_abs, m_abs, pos[:, -self.nr:].view(-1, self.nr)).unsqueeze(1)
+            o_t = self.t_emb(pos[:, 2], d_abs, m_abs, y_abs, pos[:, -self.nr:].view(-1, self.nr)).unsqueeze(1)
 
             true_s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
 
-            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
+            d_abs_neg, m_abs_neg, y_abs_neg = torch.chunk(neg_abs, 3, dim=1)
 
             s_t_neg = self.t_emb(
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_s_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -174,6 +193,7 @@ class KGEModel(nn.Module):
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_o_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -183,9 +203,11 @@ class KGEModel(nn.Module):
 
             d_abs = pos[:, 3].view(-1, 1)
             m_abs = pos[:, 4].view(-1, 1)
+            y_abs = pos[:, 5].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
-            s_t = self.t_emb(pos[:, 0], d_abs, m_abs, pos[:, -self.nr * 2:-self.nr].view(-1, self.nr)).unsqueeze(1)
+            s_t = self.t_emb(pos[:, 0], d_abs, m_abs, y_abs,
+                             pos[:, -self.nr * 2:-self.nr].view(-1, self.nr)).unsqueeze(1)
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
 
@@ -194,17 +216,19 @@ class KGEModel(nn.Module):
                 neg.view(-1),
                 d_abs.repeat(neg.size(1), 1).contiguous(),
                 m_abs.repeat(neg.size(1), 1).contiguous(),
+                y_abs.repeat(neg.size(1), 1).contiguous(),
                 neg_rel.view(-1, self.nr)
             ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim[-1])
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
 
-            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
+            d_abs_neg, m_abs_neg, y_abs_neg = torch.chunk(neg_abs, 3, dim=1)
 
             s_t_neg = self.t_emb(
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_s_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -212,6 +236,7 @@ class KGEModel(nn.Module):
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_o_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -221,6 +246,7 @@ class KGEModel(nn.Module):
 
             d_abs = pos[:, 3].view(-1, 1)
             m_abs = pos[:, 4].view(-1, 1)
+            y_abs = pos[:, 5].view(-1, 1)
 
             s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
             s_t = None
@@ -232,12 +258,13 @@ class KGEModel(nn.Module):
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
 
-            d_abs_neg, m_abs_neg = torch.chunk(neg_abs, 2, dim=1)
+            d_abs_neg, m_abs_neg, y_abs_neg = torch.chunk(neg_abs, 3, dim=1)
 
             s_t_neg = self.t_emb(
                 pos[:, 0].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_s_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -245,6 +272,7 @@ class KGEModel(nn.Module):
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
                 d_abs_neg.contiguous().view(-1, 1),
                 m_abs_neg.contiguous().view(-1, 1),
+                y_abs_neg.contiguous().view(-1, 1),
                 neg_abs_o_rel.view(-1, self.nr)
             ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim[-1])
 
@@ -644,7 +672,7 @@ class KGEModel(nn.Module):
                         true_pos, pos_u_ix = pos[:, 2], pos[:, 0]
                     elif md == 't':
                         true_pos = []
-                        for (d, m) in pos[:, 3:5]:
+                        for (d, m, y) in pos[:, 3:6]:
                             min_dt = datetime.fromtimestamp(ts_dl.dataset.min_ts, ts_dl.dataset.tz)
                             dt = datetime(day=d, month=m, year=min_dt.year, tzinfo=ts_dl.dataset.tz)
                             true_pos.append((dt + timedelta(days=1) - timedelta(seconds=1) - min_dt).days)

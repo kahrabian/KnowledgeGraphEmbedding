@@ -46,8 +46,8 @@ def main(args):
     # All true quadruples
     al_q = tr_q + vd_q + ts_q
 
-    tp_ix, tp_rix = ut.type_index(args)
-    u_ix = ut.users_index(args)
+    tp_ix, tp_rix = ut.type_index(args) if args.negative_type_sampling else (None, None)
+    u_ix = ut.users_index(args) if args.heuristic_evaluation else None
 
     mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
     if torch.cuda.is_available():

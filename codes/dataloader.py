@@ -109,7 +109,7 @@ class TrainDataset(Dataset):
 
         return torch.from_numpy(neg), torch.from_numpy(neg_rel)
 
-    def _neg_abs(self, s, o, d, m):
+    def _neg_abs(self, s, o, d, m, y):
         neg_t_ls = []
         neg_t_sz = 0
 
@@ -117,8 +117,9 @@ class TrainDataset(Dataset):
             neg_t = np.random.randint(self.min_ts, self.max_ts + 1, size=self.neg_t_sz * 2)
             neg_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
             neg_m = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
+            neg_y = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).year, 0, neg_t.reshape(1, -1))
 
-            neg_t = neg_t[(neg_d != d) | (neg_m != m)]
+            neg_t = neg_t[(neg_d != d) | (neg_m != m) | (neg_y != y)]
             neg_t_ls.append(neg_t)
             neg_t_sz += neg_t.size
 
@@ -128,9 +129,9 @@ class TrainDataset(Dataset):
         if len(neg_t_ls) != 0:
             neg_t = np.concatenate(neg_t_ls)[:self.neg_t_sz]
             neg_abs_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
-            neg_abs_m = np.apply_along_axis(
-                lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
-            neg_abs = np.stack([neg_abs_d, neg_abs_m])
+            neg_abs_m = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
+            neg_abs_y = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).year, 0, neg_t.reshape(1, -1))
+            neg_abs = np.stack([neg_abs_d, neg_abs_m, neg_abs_y])
             neg_abs_s_rel = np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)).T
             neg_abs_o_rel = np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)).T
 
@@ -140,6 +141,7 @@ class TrainDataset(Dataset):
         s, r, o, t = self.tup[ix]
         d = datetime.fromtimestamp(t, self.tz).day
         m = datetime.fromtimestamp(t, self.tz).month
+        y = datetime.fromtimestamp(t, self.tz).year
 
         t_gap = np.random.randint(0, self.max_t_gap + 1)
         s_rel = self._lt(s, t, t_gap=t_gap)
@@ -148,9 +150,9 @@ class TrainDataset(Dataset):
         smpl_w = torch.sqrt(1 / torch.Tensor([self.frq[(s, r)] + self.frq[(o, (-1) * r - 1)], ]))
 
         neg, neg_rel = self._neg(s, r, o, t)
-        neg_abs, neg_abs_s_rel, neg_abs_o_rel = self._neg_abs(s, o, d, m)
+        neg_abs, neg_abs_s_rel, neg_abs_o_rel = self._neg_abs(s, o, d, m, y)
 
-        pos = torch.LongTensor([s, r, o, d, m, *s_rel, *o_rel])
+        pos = torch.LongTensor([s, r, o, d, m, y, *s_rel, *o_rel])
 
         return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, smpl_w
 
@@ -172,7 +174,7 @@ class TestDataset(Dataset):
         self.al_t = set()
         for t in al_t:
             ts = datetime.fromtimestamp(t[3], self.tz)
-            self.al_t.add((t[0], t[1], t[2], ts.day, ts.month))
+            self.al_t.add((t[0], t[1], t[2], ts.day, ts.month, ts.year))
 
         self.max_t_gap = args.negative_max_time_gap
 
@@ -192,16 +194,17 @@ class TestDataset(Dataset):
         s, r, o, t = self.tup[ix]
         d = datetime.fromtimestamp(t, self.tz).day
         m = datetime.fromtimestamp(t, self.tz).month
+        y = datetime.fromtimestamp(t, self.tz).year
 
         t_gap = np.random.randint(0, self.max_t_gap + 1)
         s_rel = self._lt(s, t, t_gap=t_gap)
         o_rel = self._lt(o, t, t_gap=t_gap)
 
         if self.md == 's':
-            fil_b_neg = [(0, i) if (i, r, o, d, m) not in self.al_t else (-1, s) for i in range(self.nentity)]
+            fil_b_neg = [(0, i) if (i, r, o, d, m, y) not in self.al_t else (-1, s) for i in range(self.nentity)]
             fil_b_neg[s] = (0, s)
         elif self.md == 'o':
-            fil_b_neg = [(0, i) if (s, r, i, d, m) not in self.al_t else (-1, o) for i in range(self.nentity)]
+            fil_b_neg = [(0, i) if (s, r, i, d, m, y) not in self.al_t else (-1, o) for i in range(self.nentity)]
             fil_b_neg[o] = (0, o)
         elif self.md == 't':
             fil_b_neg = []
@@ -231,13 +234,14 @@ class TestDataset(Dataset):
             neg_t = fil_b_neg[:, 1]
             neg_abs_d = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).day, 0, neg_t.reshape(1, -1))
             neg_abs_m = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).month, 0, neg_t.reshape(1, -1))
-            neg_abs = np.stack([neg_abs_d, neg_abs_m])
+            neg_abs_y = np.apply_along_axis(lambda x: datetime.fromtimestamp(x, self.tz).year, 0, neg_t.reshape(1, -1))
+            neg_abs = np.stack([neg_abs_d, neg_abs_m, neg_abs_y])
 
             neg_rel = torch.from_numpy(np.array([], dtype=np.int64))
             neg_abs_s_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)))
             neg_abs_o_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)))
 
-        pos = torch.LongTensor((s, r, o, d, m, *s_rel, *o_rel))
+        pos = torch.LongTensor((s, r, o, d, m, y, *s_rel, *o_rel))
 
         return pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b
 
