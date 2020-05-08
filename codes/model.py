@@ -16,10 +16,9 @@ from dataloader import TestDataset
 class KGEModel(nn.Module):
     @staticmethod
     def _nn(in_dim, rel_dim, drp):
-        nn_seq = [nn.Linear(in_dim, rel_dim[1]), nn.BatchNorm1d(rel_dim[1]), nn.ReLU(), nn.Dropout(drp), ]
-        for i, dim in enumerate(rel_dim[2:-1], 2):
-            nn_seq += [nn.Linear(rel_dim[i - 1], rel_dim[i]), nn.BatchNorm1d(rel_dim[i]), nn.ReLU(), nn.Dropout(drp), ]
-        nn_seq += [nn.Linear(rel_dim[-2], rel_dim[-1]), nn.BatchNorm1d(rel_dim[-1]), nn.ReLU(), ]
+        nn_seq = [nn.Linear(in_dim, rel_dim[0]), nn.ReLU(), nn.Dropout(drp), ]
+        for i, dim in enumerate(rel_dim[1:], 1):
+            nn_seq += [nn.Linear(rel_dim[i - 1], rel_dim[i]), nn.ReLU(), nn.Dropout(drp), ]
         return nn.Sequential(*nn_seq)
 
     @staticmethod
@@ -50,33 +49,34 @@ class KGEModel(nn.Module):
         else:
             self.r_dim += self.abs_dim + self.rel_dim[-1]
 
-        self.emb_rng = nn.Parameter(torch.Tensor([np.sqrt(3 / args.nentity), ]), requires_grad=False)
+        self.emb_rng_e = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nentity + self.stt_dim)), ]), requires_grad=False)
+        self.emb_rng_r = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nrelation + self.r_dim)), ]), requires_grad=False)
 
         self.e_emb = nn.Parameter(torch.zeros(args.nentity, self.stt_dim))
         self.r_emb = nn.Parameter(torch.zeros(args.nrelation, self.r_dim))
-        nn.init.kaiming_uniform_(self.e_emb)
-        nn.init.kaiming_uniform_(self.r_emb)
+        nn.init.xavier_uniform_(self.e_emb)
+        nn.init.xavier_uniform_(self.r_emb)
 
         self.abs_d_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_d_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_d_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
-        nn.init.kaiming_uniform_(self.abs_d_frq_emb)
-        nn.init.kaiming_uniform_(self.abs_d_phi_emb)
-        nn.init.kaiming_uniform_(self.abs_d_amp_emb)
+        nn.init.xavier_uniform_(self.abs_d_frq_emb)
+        nn.init.xavier_uniform_(self.abs_d_phi_emb)
+        nn.init.xavier_uniform_(self.abs_d_amp_emb)
 
         self.abs_m_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_m_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_m_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
-        nn.init.kaiming_uniform_(self.abs_m_frq_emb)
-        nn.init.kaiming_uniform_(self.abs_m_phi_emb)
-        nn.init.kaiming_uniform_(self.abs_m_amp_emb)
+        nn.init.xavier_uniform_(self.abs_m_frq_emb)
+        nn.init.xavier_uniform_(self.abs_m_phi_emb)
+        nn.init.xavier_uniform_(self.abs_m_amp_emb)
 
         self.abs_y_frq_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_y_phi_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
         self.abs_y_amp_emb = nn.Parameter(torch.zeros(args.nentity, self.abs_dim))
-        nn.init.kaiming_uniform_(self.abs_y_frq_emb)
-        nn.init.kaiming_uniform_(self.abs_y_phi_emb)
-        nn.init.kaiming_uniform_(self.abs_y_amp_emb)
+        nn.init.xavier_uniform_(self.abs_y_frq_emb)
+        nn.init.xavier_uniform_(self.abs_y_phi_emb)
+        nn.init.xavier_uniform_(self.abs_y_amp_emb)
 
         self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
         self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
@@ -88,12 +88,12 @@ class KGEModel(nn.Module):
         self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
         self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
         self.rel_d_amp_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
-        nn.init.kaiming_uniform_(self.rel_d_frq_emb)
-        nn.init.kaiming_uniform_(self.rel_d_phi_emb)
-        nn.init.kaiming_uniform_(self.rel_d_amp_emb)
+        nn.init.xavier_uniform_(self.rel_d_frq_emb)
+        nn.init.xavier_uniform_(self.rel_d_phi_emb)
+        nn.init.xavier_uniform_(self.rel_d_amp_emb)
 
         if self.mdl_nm == 'pRotatE':
-            self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng.item()]]))
+            self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng_e.item()]]))
 
     def abs_emb(self, e, d, m, y):
         d_amp = torch.index_select(self.abs_d_amp_emb, dim=0, index=e)
@@ -462,7 +462,7 @@ class KGEModel(nn.Module):
             re_o = torch.cat([re_o, re_o_t], dim=2)
             im_o = torch.cat([im_o, im_o_t], dim=2)
 
-        p_r = r / (self.emb_rng.item() / pi)
+        p_r = r / (self.emb_rng_r.item() / pi)
 
         re_r = torch.cos(p_r)
         im_r = torch.sin(p_r)
@@ -535,14 +535,14 @@ class KGEModel(nn.Module):
         pi = 3.14159262358979323846
 
         if md != 't':
-            s = torch.cat([s / (self.emb_rng.item() / pi), s_t], dim=2)
-            o = torch.cat([o / (self.emb_rng.item() / pi), o_t], dim=2)
+            s = torch.cat([s / (self.emb_rng_e.item() / pi), s_t], dim=2)
+            o = torch.cat([o / (self.emb_rng_e.item() / pi), o_t], dim=2)
 
         if md is not None:
-            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1) / (self.emb_rng.item() / pi), t_neg[2]], dim=2)
-            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1) / (self.emb_rng.item() / pi), t_neg[3]], dim=2)
+            s_neg = torch.cat([t_neg[0].repeat(1, t_neg[2].size(1), 1) / (self.emb_rng_e.item() / pi), t_neg[2]], dim=2)
+            o_neg = torch.cat([t_neg[1].repeat(1, t_neg[3].size(1), 1) / (self.emb_rng_e.item() / pi), t_neg[3]], dim=2)
 
-        r = r / (self.emb_rng.item() / pi)
+        r = r / (self.emb_rng_r.item() / pi)
 
         if md is not None:
             r_neg = r.repeat(1, s_neg.size(1), 1)
