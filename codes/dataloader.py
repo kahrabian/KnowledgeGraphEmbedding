@@ -62,7 +62,7 @@ class TrainDataset(Dataset):
         self.tp_rix = tp_rix
         self.ev_ix = ev_ix
 
-        self.tz = pytz.timezone('America/Montreal')  # pytz.utc
+        self.tz = pytz.utc
         self.min_ts = min(map(lambda x: x[3], self.tup))
         self.max_ts = max(map(lambda x: x[3], self.tup))
 
@@ -167,7 +167,7 @@ class TestDataset(Dataset):
 
         self.ev_ix = ev_ix
 
-        self.tz = pytz.timezone('America/Montreal')  # pytz.utc
+        self.tz = pytz.utc
         self.min_ts = min(map(lambda x: x[3], self.tup))
         self.max_ts = max(map(lambda x: x[3], self.tup))
 
