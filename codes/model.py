@@ -32,6 +32,8 @@ class KGEModel(nn.Module):
         self.mdl_nm = args.model
         self.nr = args.nrelation
 
+        self.drp = args.dropout
+
         self.tp_ix = tp_ix
         self.tp_rix = tp_rix
         self.u_ix = u_ix
@@ -78,9 +80,9 @@ class KGEModel(nn.Module):
         nn.init.xavier_uniform_(self.abs_y_phi_emb)
         nn.init.xavier_uniform_(self.abs_y_amp_emb)
 
-        self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
-        self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
-        self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], args.dropout)
+        self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
+        self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
+        self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
         self.rel_d_frq_nn.apply(self._nn_init)
         self.rel_d_phi_nn.apply(self._nn_init)
         self.rel_d_amp_nn.apply(self._nn_init)
@@ -313,7 +315,9 @@ class KGEModel(nn.Module):
         else:
             sc = (s + r) - o
 
+        sc = F.dropout(sc, p=self.drp, training=self.training)
         sc = self.gamma.item() - torch.norm(sc, p=1, dim=2)
+
         return sc
 
     def DistMult(self, s, r, o, s_t, o_t, t_neg, md):
@@ -349,7 +353,9 @@ class KGEModel(nn.Module):
         else:
             sc = (s * r) * o
 
+        sc = F.dropout(sc, p=self.drp, training=self.training)
         sc = sc.sum(dim=2)
+
         return sc
 
     def ComplEx(self, s, r, o, s_t, o_t, t_neg, md):
@@ -426,7 +432,9 @@ class KGEModel(nn.Module):
             im_sc = re_s * im_r + im_s * re_r
             sc = re_sc * re_o + im_sc * im_o
 
+        sc = F.dropout(sc, p=self.params.dropout, training=self.training)
         sc = sc.sum(dim=2)
+
         return sc
 
     def RotatE(self, s, r, o, s_t, o_t, t_neg, md):
@@ -527,8 +535,9 @@ class KGEModel(nn.Module):
 
         sc = torch.stack([re_sc, im_sc], dim=0)
         sc = sc.norm(dim=0)
-
+        sc = F.dropout(sc, p=self.drp, training=self.training)
         sc = self.gamma.item() - sc.sum(dim=2)
+
         return sc
 
     def pRotatE(self, s, r, o, s_t, o_t, t_neg, md):
@@ -572,8 +581,9 @@ class KGEModel(nn.Module):
 
         sc = torch.sin(sc)
         sc = torch.abs(sc)
-
+        sc = F.dropout(sc, p=self.drp, training=self.training)
         sc = self.gamma.item() - sc.sum(dim=2) * self.mod
+
         return sc
 
     @staticmethod
