@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import logging
 import os
 from datetime import datetime, timedelta
@@ -80,19 +78,20 @@ class KGEModel(nn.Module):
         nn.init.xavier_uniform_(self.abs_y_phi_emb)
         nn.init.xavier_uniform_(self.abs_y_amp_emb)
 
-        self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
-        self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
-        self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
-        self.rel_d_frq_nn.apply(self._nn_init)
-        self.rel_d_phi_nn.apply(self._nn_init)
-        self.rel_d_amp_nn.apply(self._nn_init)
+        if self.rel_dim[0] > 0:
+            self.rel_d_frq_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
+            self.rel_d_phi_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
+            self.rel_d_amp_nn = self._nn(self.stt_dim + self.rel_dim[0], self.rel_dim[1:], self.drp)
+            self.rel_d_frq_nn.apply(self._nn_init)
+            self.rel_d_phi_nn.apply(self._nn_init)
+            self.rel_d_amp_nn.apply(self._nn_init)
 
-        self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
-        self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
-        self.rel_d_amp_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
-        nn.init.xavier_uniform_(self.rel_d_frq_emb)
-        nn.init.xavier_uniform_(self.rel_d_phi_emb)
-        nn.init.xavier_uniform_(self.rel_d_amp_emb)
+            self.rel_d_phi_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
+            self.rel_d_frq_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
+            self.rel_d_amp_emb = nn.Parameter(torch.zeros(self.nr, self.rel_dim[0]))
+            nn.init.xavier_uniform_(self.rel_d_frq_emb)
+            nn.init.xavier_uniform_(self.rel_d_phi_emb)
+            nn.init.xavier_uniform_(self.rel_d_amp_emb)
 
         if self.mdl_nm == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng_e.item()]]))
@@ -133,6 +132,8 @@ class KGEModel(nn.Module):
         return rel_d_emb.view(e_rel.size(0), e_rel.size(1), self.rel_dim[-1]).sum(dim=1)
 
     def t_emb(self, e, d_abs, m_abs, y_abs, e_rel):
+        if self.rel_dim[0] == 0:
+            return self.abs_emb(e, d_abs, m_abs, y_abs)
         if self.mdl_nm in ['RotatE', 'ComplEx']:
             re_abs, im_abs = torch.chunk(self.abs_emb(e, d_abs, m_abs, y_abs), 2, dim=1)
             re_rel, im_rel = torch.chunk(self.rel_emb(e, e_rel), 2, dim=1)
@@ -594,7 +595,7 @@ class KGEModel(nn.Module):
 
         pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel, smpl_w, md = next(tr_it)
         smpl_w = smpl_w.squeeze(dim=1)
-        if torch.cuda.is_available():
+        if args.cuda:
             pos = pos.cuda()
             neg = neg.cuda()
             neg_abs = neg_abs.cuda()
@@ -603,25 +604,39 @@ class KGEModel(nn.Module):
             neg_abs_o_rel = neg_abs_o_rel.cuda()
             smpl_w = smpl_w.cuda()
 
-        pos_sc = F.logsigmoid(mdl(pos)).squeeze(dim=1)
+        pos_sc = mdl(pos)
         neg_sc = mdl((pos, neg, neg_abs, neg_rel, neg_abs_s_rel, neg_abs_o_rel), md)
-        if args.negative_adversarial_sampling:
-            neg_sc = (F.softmax(neg_sc * args.alpha, dim=1).detach() * F.logsigmoid(-neg_sc)).sum(dim=1)
-        else:
-            neg_sc = F.logsigmoid(-neg_sc).mean(dim=1)
+        if args.criterion == 'NS':
+            pos_sc = F.logsigmoid(pos_sc).squeeze(dim=1)
+            if args.negative_adversarial_sampling:
+                neg_sc = (F.softmax(neg_sc * args.alpha, dim=1).detach() * F.logsigmoid(-neg_sc)).sum(dim=1)
+            else:
+                neg_sc = F.logsigmoid(-neg_sc).mean(dim=1)
 
-        if args.uni_weight:
-            pos_lss = -pos_sc.mean()
-            neg_lss = -neg_sc.mean()
-        else:
             pos_lss = -(smpl_w * pos_sc).sum() / smpl_w.sum()
             neg_lss = -(smpl_w * neg_sc).sum() / smpl_w.sum()
 
-        lss = (pos_lss + neg_lss) / 2
+            lss = (pos_lss + neg_lss) / 2
+            lss_log = {
+                'pos_loss': pos_lss.item(),
+                'neg_loss': neg_lss.item(),
+            }
+        elif args.criterion == 'CE':
+            trg = torch.zeros(pos_sc.size(0)).long()
+            if args.cuda:
+                trg = trg.cuda()
+            lss = F.cross_entropy(torch.cat([pos_sc, neg_sc], dim=1), trg)
+            lss_log = {}
+        elif args.criterion == 'MR':
+            trg = torch.ones(pos_sc.size(0)).long()
+            if args.cuda:
+                trg = trg.cuda()
+            pos_sc = pos_sc.repeat(1, neg_sc.size(1)).view(-1, 1)
+            lss = F.margin_ranking_loss(pos_sc, neg_sc.view(-1, 1), trg, margin=args.gamma)
+            lss_log = {}
 
         reg_log = {}
         if args.lmbda != 0.0:
-            # Use L3 regularization for ComplEx and DistMult
             reg = args.lmbda * (mdl.module.e_emb.norm(p=3) ** 3 + mdl.module.r_emb.norm(p=3).norm(p=3) ** 3)
             lss = lss + reg
             reg_log = {'regularization': reg.item()}
@@ -630,8 +645,7 @@ class KGEModel(nn.Module):
         opt.step()
 
         return {**reg_log,
-                'pos_loss': pos_lss.item(),
-                'neg_loss': neg_lss.item(),
+                **lss_log,
                 'loss': lss.item()}
 
     @staticmethod
@@ -664,7 +678,7 @@ class KGEModel(nn.Module):
         with torch.no_grad():
             for ts_dl, md in ts_dls:
                 for pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b in ts_dl:
-                    if torch.cuda.is_available():
+                    if args.cuda:
                         pos = pos.cuda()
                         neg = neg.cuda()
                         neg_abs = neg_abs.cuda()
