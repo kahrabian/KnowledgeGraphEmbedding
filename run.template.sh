@@ -30,6 +30,8 @@ python -u codes/run.py \
     --alpha 0.5 \
     --lmbda 0.0 \
     --learning_rate 0.00003 \
+    --weight_decay 0.0 \
+    --criterion NS \
     --negative_sample_size 256 \
     --negative_time_sample_size 8 \
     --negative_max_time_gap 259200 \

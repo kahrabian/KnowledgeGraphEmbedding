@@ -1,5 +1,3 @@
-#!/usr/bin/python3
-
 import argparse
 import json
 import logging
@@ -23,6 +21,8 @@ from model import KGEModel
 
 
 def main(args):
+    args.cuda = torch.cuda.is_available()
+
     os.makedirs(args.save_path, exist_ok=True)
 
     ut.logger(args)
@@ -50,7 +50,7 @@ def main(args):
     u_ix = ut.users_index(args) if args.heuristic_evaluation else None
 
     mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
-    if torch.cuda.is_available():
+    if args.cuda:
         mdl = mdl.cuda()
 
     logging.info('Model Parameter Configuration:')
@@ -75,7 +75,8 @@ def main(args):
         tr_it = BidirectionalOneShotIterator(tr_dl_s, tr_dl_o)
 
         lr = args.learning_rate
-        opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr)
+        wd = args.weight_decay
+        opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr, weight_decay=wd)
         wu_stps = args.warm_up_steps
 
     if args.checkpoint != '':
@@ -108,7 +109,7 @@ def main(args):
             if stp == wu_stps:
                 lr /= 10
                 logging.info(f'Change learning_rate to {lr} at step {stp}')
-                opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr)
+                opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr, weight_decay=wd)
                 wu_stps = wu_stps * 3
 
             if stp % args.log_steps == 0:

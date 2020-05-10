@@ -40,6 +40,8 @@ def args():
     parser.add_argument('--lmbda', default=0.0, type=float)
 
     parser.add_argument('--learning_rate', default=0.0001, type=float)
+    parser.add_argument('--weight_decay', default=0.0, type=float)
+    parser.add_argument('--criterion', default='NS', type=str, choices=['CE', 'MR', 'NS'])
 
     # Negative Sampling Config
     parser.add_argument('--negative_sample_size', default=256, type=int)
@@ -68,10 +70,6 @@ def args():
     parser.add_argument('--valid_steps', default=10000, type=int)
     parser.add_argument('--log_steps', default=1000, type=int)
     parser.add_argument('--test_log_steps', default=1000, type=int)
-
-    # ?
-    parser.add_argument('--uni_weight', action='store_true',
-                        help='Otherwise use subsampling weighting like in word2vec')
 
     return parser.parse_args()
 
