@@ -65,12 +65,12 @@ def main(args):
         tr_dl_s = DataLoader(TrainDataset(tr_q, tp_ix, tp_rix, ev_ix, 's', args),
                              batch_size=args.batch_size,
                              shuffle=True,
-                             num_workers=max(1, os.cpu_count() // 2))
+                             num_workers=0)#max(1, os.cpu_count() // 2))
 
         tr_dl_o = DataLoader(TrainDataset(tr_q, tp_ix, tp_rix, ev_ix, 'o', args),
                              batch_size=args.batch_size,
                              shuffle=True,
-                             num_workers=max(1, os.cpu_count() // 2))
+                             num_workers=0)#max(1, os.cpu_count() // 2))
 
         tr_it = BidirectionalOneShotIterator(tr_dl_s, tr_dl_o)
 

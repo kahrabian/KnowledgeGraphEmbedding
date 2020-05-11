@@ -687,7 +687,7 @@ class KGEModel(nn.Module):
                         neg_rel = neg_rel.cuda()
                         fil_b = fil_b.cuda()
 
-                    sc = mdl((pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel), md) + fil_b
+                    sc = mdl((pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel), md) + fil_b * sc.abs().max()
                     as_sc = torch.argsort(sc, dim=1, descending=True)
 
                     if md == 's':
