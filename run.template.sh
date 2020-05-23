@@ -24,7 +24,7 @@ python -u codes/run.py \
     --model ${MODEL} \
     --static_dim 128 \
     --absolute_dim 256 \
-    --relative_dim 128,128,128 \
+    --relative_dim 128 \
     --dropout 0.2 \
     --gamma 6.0 \
     --alpha 0.5 \
@@ -40,9 +40,12 @@ python -u codes/run.py \
     --max_steps 200000 \
     --warm_up_steps 100000 \
     --save_path ${SAVE} \
+    --metric MRR \
     --mode head \
     --valid_steps 40000 \
     --log_steps 100 \
     --test_log_steps 1000 \
+    --timezone "America/Montreal" \
     --do_train --do_valid --do_test \
-    --negative_adversarial_sampling --negative_type_sampling --heuristic_evaluation --type_evaluation \
+    --negative_adversarial_sampling --negative_type_sampling \
+    --heuristic_evaluation --type_evaluation

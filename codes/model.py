@@ -44,9 +44,9 @@ class KGEModel(nn.Module):
 
         self.r_dim = args.static_dim * 2 if self.mdl_nm == 'ComplEx' else args.static_dim
         if self.mdl_nm == 'RotatE':
-            self.r_dim += (self.abs_dim // 2) + (self.rel_dim // 2)
+            self.r_dim += (self.abs_dim // 2)
         else:
-            self.r_dim += self.abs_dim + self.rel_dim
+            self.r_dim += self.abs_dim
 
         self.emb_rng_e = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nentity + self.stt_dim)), ]), requires_grad=False)
         self.emb_rng_r = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nrelation + self.r_dim)), ]), requires_grad=False)
@@ -77,14 +77,14 @@ class KGEModel(nn.Module):
         nn.init.xavier_uniform_(self.abs_y_phi_emb)
         nn.init.xavier_uniform_(self.abs_y_amp_emb)
 
-        # self.p_emb = PositionalEmbedding(self.rel_dim)
+        self.p_emb = PositionalEmbedding(self.rel_dim)
 
-        # self.w_e = nn.Parameter(torch.zeros(self.stt_dim, self.rel_dim))
-        # self.w_rp = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
-        # self.w_p = nn.Parameter(torch.zeros(self.rel_dim, self.rel_dim))
-        # nn.init.xavier_uniform_(self.w_e)
-        # nn.init.xavier_uniform_(self.w_rp)
-        # nn.init.xavier_uniform_(self.w_p)
+        self.w_e = nn.Parameter(torch.zeros(self.stt_dim, self.rel_dim))
+        self.w_rp = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
+        self.w_p = nn.Parameter(torch.zeros(self.rel_dim, self.rel_dim))
+        nn.init.xavier_uniform_(self.w_e)
+        nn.init.xavier_uniform_(self.w_rp)
+        nn.init.xavier_uniform_(self.w_p)
 
         if self.mdl_nm == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng_e.item()]]))
@@ -146,7 +146,7 @@ class KGEModel(nn.Module):
                 m_abs.repeat(neg.size(1), 1).contiguous(),
                 y_abs.repeat(neg.size(1), 1).contiguous(),
                 # neg_rel.view(-1, self.nr)
-            ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
+            ).view(neg.size(0), neg.size(1), self.abs_dim)
 
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
 
@@ -164,7 +164,7 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_s_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
@@ -172,7 +172,7 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_o_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             t_neg = (true_s, o, s_t_neg, o_t_neg)
         elif md == 'o':
@@ -195,7 +195,7 @@ class KGEModel(nn.Module):
                 m_abs.repeat(neg.size(1), 1).contiguous(),
                 y_abs.repeat(neg.size(1), 1).contiguous(),
                 # neg_rel.view(-1, self.nr)
-            ).view(neg.size(0), neg.size(1), self.abs_dim + self.rel_dim)
+            ).view(neg.size(0), neg.size(1), self.abs_dim)
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
 
@@ -207,7 +207,7 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_s_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
@@ -215,7 +215,7 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_o_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
         elif md == 't':
@@ -243,7 +243,7 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_s_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             o_t_neg = self.t_emb(
                 pos[:, 2].repeat(neg_abs.size(2), 1).t().contiguous().view(-1),
@@ -251,11 +251,12 @@ class KGEModel(nn.Module):
                 m_abs_neg.contiguous().view(-1, 1),
                 y_abs_neg.contiguous().view(-1, 1),
                 # neg_abs_o_rel.view(-1, self.nr)
-            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim + self.rel_dim)
+            ).view(neg_abs.size(0), neg_abs.size(2), self.abs_dim)
 
             t_neg = (s, true_o, s_t_neg, o_t_neg)
 
-        return getattr(self, self.mdl_nm)(s, r, o, s_t, o_t, t_neg, md)
+        sc = getattr(self, self.mdl_nm)(s, r, o, s_t, o_t, t_neg, md)
+        return sc
 
     def TransE(self, s, r, o, s_t, o_t, t_neg, md):
         if md != 't':
@@ -662,7 +663,7 @@ class KGEModel(nn.Module):
                         fil_b = fil_b.cuda()
 
                     sc = mdl((pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel), md)
-                    sc += fil_b * sc.abs().max()
+                    sc += fil_b * torch.max(sc.abs(), dim=1).values.view(-1, 1)
                     as_sc = torch.argsort(sc, dim=1, descending=True)
 
                     if md == 's':

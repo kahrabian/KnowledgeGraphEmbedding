@@ -4,6 +4,7 @@ import pytz
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
 import torch
 from torch.utils.data import Dataset
 
@@ -62,7 +63,7 @@ class TrainDataset(Dataset):
         self.tp_rix = tp_rix
         self.ev_ix = ev_ix
 
-        self.tz = pytz.utc
+        self.tz = pytz.timezone(args.timezone)
         self.min_ts = min(map(lambda x: x[3], self.tup))
         self.max_ts = max(map(lambda x: x[3], self.tup))
 
@@ -167,9 +168,11 @@ class TestDataset(Dataset):
 
         self.ev_ix = ev_ix
 
-        self.tz = pytz.utc
+        self.tz = pytz.timezone(args.timezone)
         self.min_ts = min(map(lambda x: x[3], self.tup))
         self.max_ts = max(map(lambda x: x[3], self.tup))
+        self.ts = pd.date_range(datetime.fromtimestamp(self.min_ts, self.tz),
+                                datetime.fromtimestamp(self.max_ts, self.tz), tz=self.tz)
 
         self.al_t = set()
         for t in al_t:
@@ -208,17 +211,11 @@ class TestDataset(Dataset):
             fil_b_neg[o] = (0, o)
         elif self.md == 't':
             fil_b_neg = []
-            min_dt = datetime.fromtimestamp(self.min_ts, self.tz)
-            max_dt = datetime.fromtimestamp(self.max_ts, self.tz)
-            for j in range(min_dt.month, max_dt.month + 1):
-                min_d = min_dt.day if m == min_dt.month else 1
-                max_d = max_dt.day if m == max_dt.month else calendar.monthlen(min_dt.year, m) + 1
-                for i in range(min_d, max_d + 1):
-                    ts = datetime(day=i, month=j, year=min_dt.year, tzinfo=self.tz).timestamp()
-                    if (s, r, o, i, j) not in self.al_t or (j == d and i == m):
-                        fil_b_neg.append((0, ts))
-                    else:
-                        fil_b_neg.append((-1, ts))
+            for t in self.ts:
+                if (s, r, o, t.day, t.month, t.year) not in self.al_t or (t.day == d and t.month == m and t.year == y):
+                    fil_b_neg.append((0, t.timestamp()))
+                else:
+                    fil_b_neg.append((-1, t.timestamp()))
 
         fil_b_neg = torch.LongTensor(fil_b_neg)
         fil_b = fil_b_neg[:, 0].float()

@@ -70,6 +70,8 @@ def args():
     parser.add_argument('--log_steps', default=1000, type=int)
     parser.add_argument('--test_log_steps', default=1000, type=int)
 
+    parser.add_argument('--timezone', default='America/Montreal', type=str)
+
     return parser.parse_args()
 
 
