@@ -223,7 +223,7 @@ class TestDataset(Dataset):
             neg = fil_b_neg[:, 1]
             neg_abs = torch.from_numpy(np.array([[], [], []], dtype=np.int64))
 
-            neg_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1)))
+            neg_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(x[0], t), 0, neg.reshape(1, -1)).T)
             neg_abs_s_rel = torch.from_numpy(np.array([], dtype=np.int64))
             neg_abs_o_rel = torch.from_numpy(np.array([], dtype=np.int64))
         else:
@@ -235,8 +235,8 @@ class TestDataset(Dataset):
             neg_abs = np.stack([neg_abs_d, neg_abs_m, neg_abs_y])
 
             neg_rel = torch.from_numpy(np.array([], dtype=np.int64))
-            neg_abs_s_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)))
-            neg_abs_o_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)))
+            neg_abs_s_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(s, x[0]), 0, neg_t.reshape(1, -1)).T)
+            neg_abs_o_rel = torch.from_numpy(np.apply_along_axis(lambda x: self._lt(o, x[0]), 0, neg_t.reshape(1, -1)).T)
 
         pos = torch.LongTensor((s, r, o, d, m, y, *s_rel, *o_rel))
 
