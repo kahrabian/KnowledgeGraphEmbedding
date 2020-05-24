@@ -795,7 +795,7 @@ class KGEModel(nn.Module):
 
                     for i in range(pos.size(0)):
                         r = (as_sc[i, :] == true_pos[i]).nonzero().item() + 1
-                        if md != 't' and args.negative_type_sampling:
+                        if md != 't' and args.type_evaluation:
                             ix = mdl.module.tp_ix[mdl.module.tp_rix[true_pos[i].item()]]
                             if args.heuristic_evaluation:
                                 u_ix = mdl.module.u_ix.get(pos_u_ix[i].item(), [])
