@@ -30,6 +30,7 @@ python -u codes/run.py \
     --alpha 0.5 \
     --lmbda 0.0 \
     --learning_rate 0.00003 \
+    --learning_rate_steps 100000 \
     --weight_decay 0.0 \
     --criterion NS \
     --negative_sample_size 256 \
@@ -38,7 +39,6 @@ python -u codes/run.py \
     --batch_size 64 \
     --test_batch_size 1 \
     --max_steps 200000 \
-    --warm_up_steps 100000 \
     --save_path ${SAVE} \
     --metric MRR \
     --mode head \

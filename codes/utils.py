@@ -39,6 +39,7 @@ def args():
     parser.add_argument('--lmbda', default=0.0, type=float)
 
     parser.add_argument('--learning_rate', default=0.0001, type=float)
+    parser.add_argument('--learning_rate_steps', default='100000', type=str)
     parser.add_argument('--weight_decay', default=0.0, type=float)
     parser.add_argument('--criterion', default='NS', type=str, choices=['CE', 'MR', 'NS'])
 
@@ -58,7 +59,6 @@ def args():
     parser.add_argument('--test_batch_size', default=4, type=int)
 
     parser.add_argument('--max_steps', default=200000, type=int)
-    parser.add_argument('--warm_up_steps', default=100000, type=int)
 
     parser.add_argument('--checkpoint', default='', type=str)
     parser.add_argument('--save_path', default=None, type=str)
@@ -136,14 +136,15 @@ def logger(args):
                         handlers=[logging.StreamHandler(), logging.FileHandler(log_file, mode='w')])
 
 
-def save(mdl, opt, var_ls, args):
+def save(mdl, opt, opt_sc, var_ls, args):
     with open(os.path.join(args.save_path, 'config.json'), 'w') as f:
         json.dump(vars(args), f)
 
     torch.save({
         **var_ls,
         'mdl_state_dict': mdl.state_dict(),
-        'opt_state_dict': opt.state_dict()
+        'opt_state_dict': opt.state_dict(),
+        'opt_sc_state_dict': opt_sc.state_dict(),
     }, os.path.join(args.save_path, f'checkpoint.chk'))
 
 

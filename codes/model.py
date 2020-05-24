@@ -678,7 +678,7 @@ class KGEModel(nn.Module):
         return sc
 
     @staticmethod
-    def train_step(mdl, opt, tr_it, args):
+    def train_step(mdl, opt, opt_sc, tr_it, args):
         mdl.train()
 
         opt.zero_grad()
@@ -733,6 +733,7 @@ class KGEModel(nn.Module):
 
         lss.backward()
         opt.step()
+        opt_sc.step()
 
         return {**reg_log,
                 **lss_log,

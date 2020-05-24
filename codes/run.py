@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
@@ -76,7 +77,7 @@ def main(args):
         lr = args.learning_rate
         wd = args.weight_decay
         opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr, weight_decay=wd)
-        wu_stps = args.warm_up_steps
+        opt_sc = MultiStepLR(opt, milestones=list(map(int, args.learning_rate_steps.split(','))))
 
     if args.checkpoint != '':
         logging.info(f'Loading checkpoint {args.checkpoint} ...')
@@ -85,8 +86,8 @@ def main(args):
         mdl.load_state_dict(checkpoint['mdl_state_dict'])
         if args.do_train:
             lr = checkpoint['lr']
-            wu_stps = checkpoint['wu_stps']
             opt.load_state_dict(checkpoint['opt_state_dict'])
+            opt_sc.load_state_dict(checkpoint['opt_sc_state_dict'])
     else:
         logging.info('Randomly Initializing ...')
         init_stp = 1
@@ -102,14 +103,8 @@ def main(args):
         logs = []
         bst_mtrs = {}
         for stp in range(init_stp, args.max_steps + 1):
-            log = mdl.module.train_step(mdl, opt, tr_it, args)
+            log = mdl.module.train_step(mdl, opt, opt_sc, tr_it, args)
             logs.append(log)
-
-            if stp == wu_stps:
-                lr /= 10
-                logging.info(f'Change learning_rate to {lr} at step {stp}')
-                opt = torch.optim.Adam(filter(lambda p: p.requires_grad, mdl.parameters()), lr=lr, weight_decay=wd)
-                wu_stps = wu_stps * 3
 
             if stp % args.log_steps == 0:
                 mtrs = {}
@@ -124,8 +119,8 @@ def main(args):
                 mtrs = mdl.module.test_step(mdl, vd_q, al_q, ev_ix, args)
                 if bst_mtrs.get(args.metric, None) is None or mtrs[args.metric] > bst_mtrs[args.metric]:
                     bst_mtrs = mtrs.copy()
-                    var_ls = {'step': stp, 'lr': lr, 'wu_stps': wu_stps}
-                    ut.save(mdl, opt, var_ls, args)
+                    var_ls = {'step': stp, 'lr': lr}
+                    ut.save(mdl, opt, opt_sc, var_ls, args)
                 ut.log('Valid', stp, mtrs)
                 ut.tensorboard_scalars(tb_sw, 'valid', stp, mtrs)
 
