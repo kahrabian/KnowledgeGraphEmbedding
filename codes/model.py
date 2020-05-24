@@ -530,7 +530,7 @@ class KGEModel(nn.Module):
                            t_neg[5].repeat(1, t_neg[6].size(1), 1) - t_neg[6]], dim=1)
 
             p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=2)
+            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
 
             re_o_r, im_o_r = torch.chunk(o_r.permute(0, 2, 1).repeat(1, s_r.size(1), 1), 2, dim=2)
             re_s_r, im_s_r = torch.chunk(s_r, 2, dim=2)
@@ -570,7 +570,7 @@ class KGEModel(nn.Module):
                            t_neg[5].repeat(1, t_neg[6].size(1), 1) - t_neg[6]], dim=1)
 
             p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=2)
+            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
 
             re_s_r, im_s_r = torch.chunk(s_r.permute(0, 2, 1).repeat(1, o_r.size(1), 1), 2, dim=2)
             re_o_r, im_o_r = torch.chunk(o_r, 2, dim=2)
@@ -596,7 +596,7 @@ class KGEModel(nn.Module):
             c = t_neg[5].repeat(1, t_neg[6].size(1), 1) - t_neg[6]
 
             p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=2)
+            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
 
             re_s_r_neg, im_s_r_neg = torch.chunk(t_neg[6], 2, dim=2)
             re_o_r_neg, im_o_r_neg = torch.chunk(t_neg[7], 2, dim=2)
@@ -614,7 +614,7 @@ class KGEModel(nn.Module):
             c = o_p - s_r.permute(0, 2, 1)
 
             p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=2)
+            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
 
             re_s_r, im_s_r = torch.chunk(s_r.permute(0, 2, 1), 2, dim=2)
             re_o_r, im_o_r = torch.chunk(o_r.permute(0, 2, 1), 2, dim=2)
