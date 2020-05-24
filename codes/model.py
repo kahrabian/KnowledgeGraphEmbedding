@@ -82,7 +82,7 @@ class KGEModel(nn.Module):
 
         self.w_e = nn.Parameter(torch.zeros(self.stt_dim, self.rel_dim // self.mp_dim))
         self.w_rp = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
-        self.w_p = nn.Parameter(torch.zeros(1, 1, self.rel_dim))
+        self.w_p = nn.Parameter(torch.zeros(1, self.rel_dim))
         # self.w_p = nn.Parameter(torch.zeros(self.rel_dim, self.rel_dim))
         nn.init.xavier_uniform_(self.w_e)
         nn.init.xavier_uniform_(self.w_rp)
