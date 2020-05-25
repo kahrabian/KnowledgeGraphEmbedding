@@ -47,7 +47,7 @@ def main(args):
     # All true quadruples
     al_q = tr_q + vd_q + ts_q
 
-    tp_ix, tp_rix = ut.type_index(args) if args.negative_type_sampling else (None, None)
+    tp_ix, tp_rix = ut.type_index(args) if args.negative_type_sampling or args.type_evaluation else (None, None)
     u_ix = ut.users_index(args) if args.heuristic_evaluation else None
 
     mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
