@@ -764,11 +764,13 @@ class KGEModel(nn.Module):
             ), 't'))
 
         logs = []
-        stp = 0
-        tot_stp = sum([len(ts_dl) for ts_dl, _ in ts_dls])
+        stp = 1
+        tot_stp = args.valid_approximation or sum([len(ts_dl) for ts_dl, _ in ts_dls])
         with torch.no_grad():
             for ts_dl, md in ts_dls:
                 for pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel, fil_b in ts_dl:
+                    if stp > tot_stp:
+                        break
                     if args.cuda:
                         pos = pos.cuda()
                         neg = neg.cuda()

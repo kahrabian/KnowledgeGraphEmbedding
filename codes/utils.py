@@ -15,6 +15,7 @@ def args():
         description='Training and Testing Knowledge Graph Embedding Models',
         usage='train.py [<args>] [-h | --help]'
     )
+    parser.add_argument('--id', required=True, type=str)
 
     # Run Config
     parser.add_argument('--dataset', type=str)
@@ -22,8 +23,8 @@ def args():
 
     parser.add_argument('--do_train', action='store_true')
     parser.add_argument('--do_valid', action='store_true')
-    parser.add_argument('--do_test', action='store_true')
     parser.add_argument('--do_eval', action='store_true')
+    parser.add_argument('--do_test', action='store_true')
 
     parser.add_argument('--static', action='store_true')
 
@@ -67,8 +68,10 @@ def args():
     parser.add_argument('--mode', default='both', type=str, choices=['head', 'tail', 'both', 'time', 'full'])
 
     parser.add_argument('--valid_steps', default=10000, type=int)
+    parser.add_argument('--valid_approximation', default=0, type=int)
     parser.add_argument('--log_steps', default=1000, type=int)
     parser.add_argument('--test_log_steps', default=1000, type=int)
+    parser.add_argument('--log_dir', default=None, type=str)
 
     parser.add_argument('--timezone', default='America/Montreal', type=str)
 

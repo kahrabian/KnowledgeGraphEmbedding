@@ -17,9 +17,10 @@ python -u -c 'import torch; print(torch.__version__)'
 
 MODEL=RotatE
 DATASET=GitGraph_TI_0.01
-SAVE=models/${MODEL}_${DATASET}_${SLURM_JOB_ID}
+ID=${MODEL}_${DATASET}_${SLURM_JOB_ID}
 
 python -u codes/run.py \
+    --id ${ID} \
     --dataset data/${DATASET} \
     --model ${MODEL} \
     --static_dim 128 \
@@ -39,13 +40,15 @@ python -u codes/run.py \
     --batch_size 64 \
     --test_batch_size 1 \
     --max_steps 200000 \
-    --save_path ${SAVE} \
+    --save_path models/${SAVE} \
     --metric MRR \
     --mode head \
     --valid_steps 40000 \
+    --valid_approximation 0 \
     --log_steps 100 \
     --test_log_steps 1000 \
+    --log_dir runs/${LOG} \
     --timezone "America/Montreal" \
-    --do_train --do_valid --do_test \
+    --do_train --do_valid --do_eval --do_test \
     --negative_adversarial_sampling --negative_type_sampling \
     --heuristic_evaluation --type_evaluation

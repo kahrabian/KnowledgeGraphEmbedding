@@ -27,7 +27,7 @@ def main(args):
     os.makedirs(args.save_path, exist_ok=True)
 
     ut.logger(args)
-    tb_sw = SummaryWriter()
+    tb_sw = SummaryWriter(log_dir=args.log_dir)
 
     e2id = ut.index('entities.dict', args)
     r2id = ut.index('relations.dict', args)
@@ -126,17 +126,18 @@ def main(args):
 
         ut.tensorboard_hparam(tb_sw, bst_mtrs, args)
 
-    if args.do_test:
-        logging.info('Evaluating on Test Dataset ...')
-        mtrs = mdl.module.test_step(mdl, ts_q, al_q, ev_ix, args)
-        ut.log('Test', stp, mtrs)
-        ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
-
     if args.do_eval:
         logging.info('Evaluating on Training Dataset ...')
         mtrs = mdl.module.test_step(mdl, tr_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'eval', stp, mtrs)
+
+    if args.do_test:
+        args.valid_approximation = 0
+        logging.info('Evaluating on Test Dataset ...')
+        mtrs = mdl.module.test_step(mdl, ts_q, al_q, ev_ix, args)
+        ut.log('Test', stp, mtrs)
+        ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
 
     tb_sw.flush()
     tb_sw.close()
