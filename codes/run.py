@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import wandb
 from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
@@ -28,6 +29,7 @@ def main(args):
 
     ut.logger(args)
     tb_sw = SummaryWriter(log_dir=args.log_dir)
+    wandb.init(project='ghkg', sync_tensorboard=True)
 
     e2id = ut.index('entities.dict', args)
     r2id = ut.index('relations.dict', args)
@@ -53,6 +55,7 @@ def main(args):
     mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
     if args.cuda:
         mdl = mdl.cuda()
+    wandb.watch(mdl, log='all')
 
     logging.info('Model Parameter Configuration:')
     for name, param in mdl.named_parameters():
