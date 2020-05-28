@@ -16,6 +16,7 @@ source ${VENVDIR}/gg/bin/activate
 python -u -c 'import torch; print(torch.__version__)'
 
 export WANDB_RUN_ID=${SLURM_JOB_ID}
+export WANDB_MODE=dryrun
 
 MODEL=RotatE
 DATASET=GitGraph_TI_0.01
