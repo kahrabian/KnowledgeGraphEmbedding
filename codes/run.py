@@ -55,7 +55,6 @@ def main(args):
     mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
     if args.cuda:
         mdl = mdl.cuda()
-    wandb.watch(mdl, log='all')
 
     logging.info('Model Parameter Configuration:')
     for name, param in mdl.named_parameters():
