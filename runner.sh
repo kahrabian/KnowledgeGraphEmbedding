@@ -5,7 +5,7 @@ AD=(0   32 64 96 32 64 32 0  0  0 )
 RD=(0   0  0  0  32 32 64 32 64 96)
 
 for DS in ${@}; do
-    for i in $(seq 0 10); do
+    for i in $(seq 0 9); do
         cp run.template.sh run.${DS}.${i}.sh
         sed -i "s/DS/${DS}/" run.${DS}.${i}.sh
         sed -i "s/SD/${SD[i]}/" run.${DS}.${i}.sh
