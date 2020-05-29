@@ -136,6 +136,7 @@ def main(args):
 
     if args.do_test:
         args.valid_approximation = 0
+        args.test_log_steps = 100
         logging.info('Evaluating on Test Dataset ...')
         mtrs = mdl.module.test_step(mdl, ts_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
