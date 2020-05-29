@@ -107,9 +107,9 @@ class KGEModel(nn.Module):
         d_frq = torch.index_select(self.abs_d_frq_emb, dim=0, index=e)
         d_phi = torch.index_select(self.abs_d_phi_emb, dim=0, index=e)
 
-        m_amp = torch.index_select(self.abs_m_amp_emb, dim=0, index=e)
-        m_frq = torch.index_select(self.abs_m_frq_emb, dim=0, index=e)
-        m_phi = torch.index_select(self.abs_m_phi_emb, dim=0, index=e)
+        # m_amp = torch.index_select(self.abs_m_amp_emb, dim=0, index=e)
+        # m_frq = torch.index_select(self.abs_m_frq_emb, dim=0, index=e)
+        # m_phi = torch.index_select(self.abs_m_phi_emb, dim=0, index=e)
 
         # y_amp = torch.index_select(self.abs_y_amp_emb, dim=0, index=e)
         # y_frq = torch.index_select(self.abs_y_frq_emb, dim=0, index=e)
@@ -119,17 +119,17 @@ class KGEModel(nn.Module):
             re_d_sin, im_d_sin = torch.chunk(d * d_frq + d_phi, 2, dim=1)
             d_emb = torch.cat([d_amp * torch.sin(re_d_sin), d_amp * torch.cos(im_d_sin)], dim=1)
 
-            re_m_sin, im_m_sin = torch.chunk(m * m_frq + m_phi, 2, dim=1)
-            m_emb = torch.cat([m_amp * torch.sin(re_m_sin), m_amp * torch.cos(im_m_sin)], dim=1)
+            # re_m_sin, im_m_sin = torch.chunk(m * m_frq + m_phi, 2, dim=1)
+            # m_emb = torch.cat([m_amp * torch.sin(re_m_sin), m_amp * torch.cos(im_m_sin)], dim=1)
 
             # re_y_sin, im_y_sin = torch.chunk(y * y_frq + y_phi, 2, dim=1)
             # y_emb = torch.cat([y_amp * torch.sin(re_y_sin), y_amp * torch.cos(im_y_sin)], dim=1)
         else:
             d_emb = d_amp * torch.sin(d * d_frq + d_phi)
-            m_emb = m_amp * torch.sin(m * m_frq + m_phi)
+            # m_emb = m_amp * torch.sin(m * m_frq + m_phi)
             # y_emb = y_amp * torch.sin(y * y_frq + y_phi)
 
-        return d_emb + m_emb  # + y_emb
+        return d_emb  # + m_emb + y_emb
 
     def forward(self, x, md=None):
         if md is None:
