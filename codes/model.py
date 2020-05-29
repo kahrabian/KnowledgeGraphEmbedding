@@ -82,11 +82,8 @@ class KGEModel(nn.Module):
 
         self.w_e = nn.Parameter(torch.zeros(self.stt_dim, self.rel_dim // self.mp_dim))
         self.w_rp = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
-        self.w_p = nn.Parameter(torch.zeros(1, self.rel_dim))
-        # self.w_p = nn.Parameter(torch.zeros(self.rel_dim, self.rel_dim))
         nn.init.xavier_uniform_(self.w_e)
         nn.init.xavier_uniform_(self.w_rp)
-        nn.init.xavier_uniform_(self.w_p)
 
         if self.mdl_nm == 'pRotatE':
             self.mod = nn.Parameter(torch.Tensor([[0.5 * self.emb_rng_e.item()]]))
@@ -538,21 +535,6 @@ class KGEModel(nn.Module):
                            t_neg[4].repeat(1, t_neg[7].size(1) or 1, 1) - t_neg[7]], dim=1)
             c = torch.cat([o_p.repeat(1, s_r.size(1), 1) - s_r,
                            t_neg[5].repeat(1, t_neg[6].size(1) or 1, 1) - t_neg[6]], dim=1)
-
-            p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
-
-            re_o_r, im_o_r = torch.chunk(o_r.permute(0, 2, 1).repeat(1, s_r.size(1), 1), 2, dim=2)
-            re_s_r, im_s_r = torch.chunk(s_r, 2, dim=2)
-            re_d = (re_w_p * re_o_r + im_w_p * im_o_r) - re_s_r
-            im_d = (re_w_p * im_o_r - im_w_p * re_o_r) - im_s_r
-
-            re_o_r_neg, im_o_r_neg = torch.chunk(t_neg[7], 2, dim=2)
-            re_s_r_neg, im_s_r_neg = torch.chunk(t_neg[6], 2, dim=2)
-            re_d_neg = (re_w_p * re_o_r_neg + im_w_p * im_o_r_neg) - re_s_r_neg
-            im_d_neg = (re_w_p * im_o_r_neg - im_w_p * re_o_r_neg) - im_s_r_neg
-
-            d = torch.cat([torch.cat([re_d, re_d_neg], dim=1), torch.cat([im_d, im_d_neg], dim=1)], dim=2)
         elif md == 'o':
             re_sc = re_s * re_r - im_s * im_r
             im_sc = re_s * im_r + im_s * re_r
@@ -578,21 +560,6 @@ class KGEModel(nn.Module):
                            t_neg[4].repeat(1, t_neg[7].size(1) or 1, 1) - t_neg[7]], dim=1)
             c = torch.cat([o_p - s_r.permute(0, 2, 1).repeat(1, o_p.size(1), 1),
                            t_neg[5].repeat(1, t_neg[6].size(1) or 1, 1) - t_neg[6]], dim=1)
-
-            p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
-
-            re_s_r, im_s_r = torch.chunk(s_r.permute(0, 2, 1).repeat(1, o_r.size(1), 1), 2, dim=2)
-            re_o_r, im_o_r = torch.chunk(o_r, 2, dim=2)
-            re_d = (re_s_r * re_w_p - im_s_r * im_w_p) - re_o_r
-            im_d = (re_s_r * im_w_p + im_s_r * re_w_p) - im_o_r
-
-            re_s_r_neg, im_s_r_neg = torch.chunk(t_neg[6], 2, dim=2)
-            re_o_r_neg, im_o_r_neg = torch.chunk(t_neg[7], 2, dim=2)
-            re_d_neg = (re_s_r_neg * re_w_p - im_s_r_neg * im_w_p) - re_o_r_neg
-            im_d_neg = (re_s_r_neg * im_w_p + im_s_r_neg * re_w_p) - im_o_r_neg
-
-            d = torch.cat([torch.cat([re_d, re_d_neg], dim=1), torch.cat([im_d, im_d_neg], dim=1)], dim=2)
         elif md == 't':
             re_sc_neg = re_s_neg * re_r_neg - im_s_neg * im_r_neg
             im_sc_neg = im_s_neg * re_r_neg + re_s_neg * im_r_neg
@@ -604,16 +571,6 @@ class KGEModel(nn.Module):
 
             b = t_neg[4].repeat(1, t_neg[7].size(1), 1) - t_neg[7]
             c = t_neg[5].repeat(1, t_neg[6].size(1), 1) - t_neg[6]
-
-            p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
-
-            re_s_r_neg, im_s_r_neg = torch.chunk(t_neg[6], 2, dim=2)
-            re_o_r_neg, im_o_r_neg = torch.chunk(t_neg[7], 2, dim=2)
-            re_d_neg = (re_s_r_neg * re_w_p - im_s_r_neg * im_w_p) - re_o_r_neg
-            im_d_neg = (re_s_r_neg * im_w_p + im_s_r_neg * re_w_p) - im_o_r_neg
-
-            d = torch.cat([re_d_neg, im_d_neg], dim=2)
         else:
             re_sc = re_s * re_r - im_s * im_r
             im_sc = re_s * im_r + im_s * re_r
@@ -623,16 +580,7 @@ class KGEModel(nn.Module):
             b = s_p - o_r.permute(0, 2, 1)
             c = o_p - s_r.permute(0, 2, 1)
 
-            p_w_p = self.w_p / (self.emb_rng_w_p.item() / pi)
-            re_w_p, im_w_p = torch.chunk(p_w_p, 2, dim=1)
-
-            re_s_r, im_s_r = torch.chunk(s_r.permute(0, 2, 1), 2, dim=2)
-            re_o_r, im_o_r = torch.chunk(o_r.permute(0, 2, 1), 2, dim=2)
-            re_d = (re_s_r * re_w_p - im_s_r * im_w_p) - re_o_r
-            im_d = (re_s_r * im_w_p + im_s_r * re_w_p) - im_o_r
-            d = torch.cat([re_d, im_d], dim=2)
-
-        re_bcd, im_bcd = torch.chunk((b + c + d), 2, dim=2)
+        re_bcd, im_bcd = torch.chunk((b + c), 2, dim=2)
 
         sc = torch.stack([torch.cat([re_sc, re_bcd], dim=2), torch.cat([im_sc, im_bcd], dim=2)], dim=0)
         sc = sc.norm(dim=0)
