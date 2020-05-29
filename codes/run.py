@@ -83,13 +83,13 @@ def main(args):
 
     if args.checkpoint != '':
         logging.info(f'Loading checkpoint {args.checkpoint} ...')
-        checkpoint = torch.load(os.path.join(args.checkpoint, f'best_{args.metric}.chk'))
-        init_stp = checkpoint['step']
-        mdl.load_state_dict(checkpoint['mdl_state_dict'])
+        chk = torch.load(os.path.join(args.checkpoint, 'checkpoint.chk'))
+        init_stp = chk['step']
+        mdl.load_state_dict(chk['mdl_state_dict'])
         if args.do_train:
-            lr = checkpoint['lr']
-            opt.load_state_dict(checkpoint['opt_state_dict'])
-            opt_sc.load_state_dict(checkpoint['opt_sc_state_dict'])
+            lr = chk['lr']
+            opt.load_state_dict(chk['opt_state_dict'])
+            opt_sc.load_state_dict(chk['opt_sc_state_dict'])
     else:
         logging.info('Randomly Initializing ...')
         init_stp = 1
@@ -138,6 +138,7 @@ def main(args):
         args.valid_approximation = 0
         args.test_log_steps = 100
         logging.info('Evaluating on Test Dataset ...')
+        mdl.load_state_dict(torch.load(os.path.join(args.save_path, f'checkpoint.chk'))['mdl_state_dict'])
         mtrs = mdl.module.test_step(mdl, ts_q, al_q, ev_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
