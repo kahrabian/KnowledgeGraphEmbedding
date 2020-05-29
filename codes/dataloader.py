@@ -171,8 +171,8 @@ class TestDataset(Dataset):
         self.tz = pytz.timezone(args.timezone)
         self.min_ts = min(map(lambda x: x[3], self.tup))
         self.max_ts = max(map(lambda x: x[3], self.tup))
-        self.ts = pd.date_range(datetime.fromtimestamp(self.min_ts, self.tz),
-                                datetime.fromtimestamp(self.max_ts, self.tz), tz=self.tz)
+        self.ts = pd.date_range(datetime.fromtimestamp(self.min_ts, self.tz).strftime('%Y-%m-%d'),
+                                datetime.fromtimestamp(self.max_ts, self.tz).strftime('%Y-%m-%d'), tz=self.tz)
 
         self.al_t = set()
         for t in al_t:
