@@ -13,3 +13,4 @@ logs
 wandb
 
 run.sh
+run.*.*.sh
