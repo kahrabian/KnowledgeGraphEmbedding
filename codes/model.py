@@ -24,7 +24,7 @@ class PositionalEmbedding(nn.Module):
 
 
 class KGEModel(nn.Module):
-    def __init__(self, tp_ix, tp_rix, u_ix, args):
+    def __init__(self, tp_ix, tp_rix, e_ix, u_ix, args):
         super(KGEModel, self).__init__()
         self.mdl_nm = args.model
         self.nr = args.nrelation
@@ -33,6 +33,7 @@ class KGEModel(nn.Module):
 
         self.tp_ix = tp_ix
         self.tp_rix = tp_rix
+        self.e_ix = e_ix
         self.u_ix = u_ix
 
         self.gamma = nn.Parameter(torch.Tensor([args.gamma, ]), requires_grad=False)
@@ -740,7 +741,7 @@ class KGEModel(nn.Module):
 
                     sc = mdl((pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel), md)
                     sc += fil_b * torch.max(sc.abs(), dim=1).values.view(-1, 1)
-                    as_sc = torch.argsort(sc, dim=1, descending=True)
+                    as_sc = torch.argsort(sc, dim=1, descending=True).cpu().numpy()
 
                     if md == 's':
                         true_pos, pos_u_ix = pos[:, 0], pos[:, 2]
@@ -752,17 +753,18 @@ class KGEModel(nn.Module):
                             for i, t in enumerate(ts_dl.dataset.ts):
                                 if (t.day == d and t.month == m and t.year == y):
                                     true_pos.append(i)
+                        true_pos = torch.from_numpy(np.array(true_pos).astype(np.int))
 
                     for i in range(pos.size(0)):
-                        r = (as_sc[i, :] == true_pos[i]).nonzero().item() + 1
+                        r = np.argwhere(as_sc[i, :] == true_pos[i].item())[0, 0] + 1
                         if md != 't' and args.type_evaluation:
                             ix = mdl.module.tp_ix[mdl.module.tp_rix[true_pos[i].item()]]
                             if args.heuristic_evaluation:
-                                u_ix = mdl.module.u_ix.get(pos_u_ix[i].item(), [])
-                                u_r = np.isin(as_sc[i, :].cpu().numpy(), u_ix)[:r].sum()
-                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum() if u_r == 0 else u_r
+                                u_ix = mdl.module.u_ix.get(mdl.module.e_ix.get(pos_u_ix[i].item(), ''), [])
+                                u_r = np.isin(as_sc[i, :], u_ix)[:r].sum()
+                                r = np.isin(as_sc[i, :], ix)[:r].sum() if u_r == 0 else u_r
                             else:
-                                r = np.isin(as_sc[i, :].cpu().numpy(), ix)[:r].sum()
+                                r = np.isin(as_sc[i, :], ix)[:r].sum()
 
                         logs.append({'MRR': 1.0 / r,
                                      'MR': float(r),

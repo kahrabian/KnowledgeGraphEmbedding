@@ -50,9 +50,9 @@ def main(args):
     al_q = tr_q + vd_q + ts_q
 
     tp_ix, tp_rix = ut.type_index(args) if args.negative_type_sampling or args.type_evaluation else (None, None)
-    u_ix = ut.users_index(args) if args.heuristic_evaluation else None
+    e_ix, u_ix = ut.users_index(args) if args.heuristic_evaluation else (None, None)
 
-    mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, u_ix, args))
+    mdl = nn.DataParallel(KGEModel(tp_ix, tp_rix, e_ix, u_ix, args))
     if args.cuda:
         mdl = mdl.cuda()
 

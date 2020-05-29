@@ -182,6 +182,7 @@ def users_index(args):
     r_u['users'] = r_u.users.apply(lambda x: x if type(x) == list else [])
     r_u = r_u.groupby('repo')['users'].apply(lambda x: list(itertools.chain.from_iterable(x)))
     r_u = r_u.reset_index(name='users')
+    r_u['users'] = r_u.users.apply(lambda x: [int(re_ix[y]) for y in x])
 
     vd = pd.read_csv(os.path.join(args.dataset, 'valid.txt'), sep='\t', names=['s', 'r', 'o', 't'])
     ts = pd.read_csv(os.path.join(args.dataset, 'test.txt'), sep='\t', names=['s', 'r', 'o', 't'])
@@ -190,20 +191,15 @@ def users_index(args):
     i_r = al[al['o'].str.startswith('/repo/') & al['s'].str.startswith('/issue/')]
     i_r = i_r.groupby('s')['o'].apply(lambda x: list(x)[0]).reset_index(name='repo')
     i_r = i_r.rename(columns={'s': 'issue'})
+    i_r['issue'] = i_r.issue.apply(lambda x: int(re_ix[x]))
 
     p_r = al[al['o'].str.startswith('/repo/') & al['s'].str.startswith('/pr/')]
     p_r = p_r.groupby('s')['o'].apply(lambda x: list(x)[0]).reset_index(name='repo')
     p_r = p_r.rename(columns={'s': 'pr'})
+    p_r['pr'] = p_r.pr.apply(lambda x: int(re_ix[x]))
 
-    i_u = i_r.merge(r_u, on='repo', how='left')[['issue', 'users']]
-    i_u['issue'] = i_u.issue.apply(lambda x: int(re_ix[x]))
-    i_u['users'] = i_u.users.fillna('').apply(lambda x: [int(re_ix[y]) for y in x])
-    i_u_ix = i_u.set_index('issue').to_dict()['users']
+    r_u_ix = r_u.set_index('repo').to_dict()['users']
+    i_r_ix = i_r.set_index('issue').to_dict()['repo']
+    p_r_ix = p_r.set_index('pr').to_dict()['repo']
 
-    p_u = p_r.merge(r_u, on='repo', how='left')[['pr', 'users']]
-    p_u['pr'] = p_u.pr.apply(lambda x: int(re_ix[x]))
-    p_u['users'] = p_u.users.fillna('').apply(lambda x: [int(re_ix[y]) for y in x])
-    p_u_ix = p_u.set_index('pr').to_dict()['users']
-
-    return {**i_u_ix,
-            **p_u_ix}
+    return {**i_r_ix, **p_r_ix}, r_u_ix
