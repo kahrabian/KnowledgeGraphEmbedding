@@ -581,9 +581,10 @@ class KGEModel(nn.Module):
             b = s_p - o_r.permute(0, 2, 1)
             c = o_p - s_r.permute(0, 2, 1)
 
-        re_bcd, im_bcd = torch.chunk((b + c), 2, dim=2)
+        re_b, im_b = torch.chunk(b, 2, dim=2)
+        re_c, im_c = torch.chunk(c, 2, dim=2)
 
-        sc = torch.stack([torch.cat([re_sc, re_bcd], dim=2), torch.cat([im_sc, im_bcd], dim=2)], dim=0)
+        sc = torch.stack([torch.cat([re_sc, re_b, re_c], dim=2), torch.cat([im_sc, im_b, im_c], dim=2)], dim=0)
         sc = sc.norm(dim=0)
         sc = F.dropout(sc, p=self.drp, training=self.training)
         sc = self.gamma.item() - sc.sum(dim=2)
