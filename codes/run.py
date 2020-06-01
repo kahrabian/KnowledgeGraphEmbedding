@@ -87,7 +87,7 @@ def main(args):
         init_stp = chk['step']
         mdl.load_state_dict(chk['mdl_state_dict'])
         if args.do_train:
-            lr = chk['lr']
+            lr = chk['opt_state_dict']['param_groups'][0]['lr']
             opt.load_state_dict(chk['opt_state_dict'])
             opt_sc.load_state_dict(chk['opt_sc_state_dict'])
     else:
@@ -121,7 +121,7 @@ def main(args):
                 mtrs = mdl.module.test_step(mdl, vd_q, al_q, ev_ix, args)
                 if bst_mtrs.get(args.metric, None) is None or mtrs[args.metric] > bst_mtrs[args.metric]:
                     bst_mtrs = mtrs.copy()
-                    var_ls = {'step': stp, 'lr': lr}
+                    var_ls = {'step': stp}
                     ut.save(mdl, opt, opt_sc, var_ls, args)
                 ut.log('Valid', stp, mtrs)
                 ut.tensorboard_scalars(tb_sw, 'valid', stp, mtrs)
