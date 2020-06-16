@@ -687,7 +687,7 @@ class KGEModel(nn.Module):
 
         reg_log = {}
         if args.lmbda != 0.0:
-            reg = args.lmbda * (mdl.module.e_emb.norm(p=3) ** 3 + mdl.module.r_emb.norm(p=3).norm(p=3) ** 3)
+            reg = args.lmbda * (mdl.module.w_rp.norm(p=3) ** 3 + mdl.module.w_e.norm(p=3) ** 3)
             lss = lss + reg
             reg_log = {'regularization': reg.item()}
 
