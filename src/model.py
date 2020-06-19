@@ -370,8 +370,8 @@ class KGEModel(nn.Module):
         re_c, im_c = torch.chunk(c, 2, dim=2)
 
         sc = torch.stack([torch.cat([re_sc, re_b, re_c], dim=2), torch.cat([im_sc, im_b, im_c], dim=2)], dim=0)
-        sc = sc.norm(dim=0)
         sc = F.dropout(sc, p=self.drp, training=self.training)
+        sc = sc.norm(dim=0)
         sc = self.gamma - sc.sum(dim=2)
 
         return sc
