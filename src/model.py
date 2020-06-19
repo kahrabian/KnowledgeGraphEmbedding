@@ -78,10 +78,10 @@ class KGEModel(nn.Module):
         m_phi = torch.index_select(self.abs_m_phi_emb, dim=0, index=e)
 
         re_d_emb, im_d_emb = torch.chunk(d * d_frq + d_phi, 2, dim=1)
-        d_emb = torch.cat([d_amp * torch.sin(re_d_emb), d_amp * torch.cos(im_d_emb)], dim=1)
+        d_emb = torch.cat([d_amp * torch.cos(re_d_emb), d_amp * torch.sin(im_d_emb)], dim=1)
 
         re_m_emb, im_m_emb = torch.chunk(m * m_frq + m_phi, 2, dim=1)
-        m_emb = torch.cat([m_amp * torch.sin(re_m_emb), m_amp * torch.cos(im_m_emb)], dim=1)
+        m_emb = torch.cat([m_amp * torch.cos(re_m_emb), m_amp * torch.sin(im_m_emb)], dim=1)
 
         return d_emb + m_emb
 
@@ -291,7 +291,7 @@ class KGEModel(nn.Module):
             re_o_neg = torch.cat([re_true_o.repeat(1, re_o_t_neg.size(1), 1), re_o_t_neg], dim=2)
             im_o_neg = torch.cat([im_true_o.repeat(1, im_o_t_neg.size(1), 1), im_o_t_neg], dim=2)
 
-        p_r = r / (self.emb_rng_r / pi)
+        p_r = pi * (r / self.emb_rng_r)
         re_r, im_r = torch.cos(p_r), torch.sin(p_r)
         if md is not None:
             re_r_neg, im_r_neg = re_r.repeat(1, re_s_neg.size(1), 1), im_r.repeat(1, im_o_neg.size(1), 1)

@@ -32,7 +32,7 @@ python -u main.py \
     --dropout 0.2 \
     --gamma 6.0 \
     --alpha 0.5 \
-    --lmbda 0.00001 \
+    --lmbda 0.001 \
     --learning_rate 0.00003 \
     --learning_rate_steps 100000 \
     --weight_decay 0.0 \
