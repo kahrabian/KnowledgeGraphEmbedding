@@ -10,7 +10,7 @@ from .dataloader import TestDataset
 
 
 def _cuda(args, ts):
-    return [t.cuda() for t in ts] if args.cuda else ts
+    return [t.cuda() if type(t) == torch.Tensor else t for t in ts] if args.cuda else ts
 
 
 def train_step(mdl, opt, opt_sc, tr_it, args):
