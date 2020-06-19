@@ -51,7 +51,6 @@ class KGEModel(nn.Module):
 
         self.emb_rng_e = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nentity + self.stt_dim)), ]), requires_grad=False)
         self.emb_rng_r = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nrelation + self.r_dim)), ]), requires_grad=False)
-        self.emb_rng_w_p = nn.Parameter(torch.Tensor([np.sqrt(6 / (1 + self.rel_dim)), ]), requires_grad=False)
 
         self.e_emb = nn.Parameter(torch.zeros(args.nentity, self.stt_dim))
         self.r_emb = nn.Parameter(torch.zeros(args.nrelation, self.r_dim))
@@ -667,10 +666,8 @@ class KGEModel(nn.Module):
             neg_lss = -(smpl_w * neg_sc).sum() / smpl_w.sum()
 
             lss = (pos_lss + neg_lss) / 2
-            lss_log = {
-                'pos_loss': pos_lss.item(),
-                'neg_loss': neg_lss.item(),
-            }
+            lss_log = {'pos_loss': pos_lss.item(),
+                       'neg_loss': neg_lss.item()}
         elif args.criterion == 'CE':
             trg = torch.zeros(pos_sc.size(0)).long()
             if args.cuda:
@@ -687,8 +684,10 @@ class KGEModel(nn.Module):
 
         reg_log = {}
         if args.lmbda != 0.0:
-            reg = args.lmbda * (mdl.module.w_rp.norm(p=3) ** 3 + mdl.module.w_e.norm(p=3) ** 3)
-            lss = lss + reg
+            reg = args.lmbda * (mdl.module.w_rp.norm(p=3) ** 3 +
+                                mdl.module.w_e.norm(p=3) ** 3 +
+                                mdl.module.e_emb.norm(p=3) ** 3)
+            lss += reg
             reg_log = {'regularization': reg.item()}
 
         lss.backward()
@@ -705,23 +704,17 @@ class KGEModel(nn.Module):
 
         ts_dls = []
         if args.mode in ['head', 'both', 'full']:
-            ts_dls.append((DataLoader(
-                TestDataset(ts_q, al_q, ev_ix, 's', args),
-                batch_size=args.test_batch_size,
-                num_workers=max(1, os.cpu_count() // 2),
-            ), 's'))
+            ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 's', args),
+                                      batch_size=args.test_batch_size,
+                                      num_workers=max(1, os.cpu_count() // 2)), 's'))
         if args.mode in ['tail', 'both', 'full']:
-            ts_dls.append((DataLoader(
-                TestDataset(ts_q, al_q, ev_ix, 'o', args),
-                batch_size=args.test_batch_size,
-                num_workers=max(1, os.cpu_count() // 2),
-            ), 'o'))
+            ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 'o', args),
+                                      batch_size=args.test_batch_size,
+                                      num_workers=max(1, os.cpu_count() // 2)), 'o'))
         if args.mode in ['time', 'full']:
-            ts_dls.append((DataLoader(
-                TestDataset(ts_q, al_q, ev_ix, 't', args),
-                batch_size=args.test_batch_size,
-                num_workers=max(1, os.cpu_count() // 2),
-            ), 't'))
+            ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 't', args),
+                                      batch_size=args.test_batch_size,
+                                      num_workers=max(1, os.cpu_count() // 2)), 't'))
 
         logs = []
         stp = 1
