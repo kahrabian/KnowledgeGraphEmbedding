@@ -1,10 +1,10 @@
 #!/bin/sh
 #SBATCH --account=def-jinguo
 #SBATCH --job-name=ghkg-DS
-#SBATCH --gres=gpu:v100:1
+#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
-#SBATCH --time=12:00:00
+#SBATCH --mem=64G
+#SBATCH --time=1-0
 #SBATCH --output=./logs/%x-%j.out
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=kian.ahrabian@mail.mcgill.ca
@@ -32,24 +32,24 @@ python -u codes/run.py \
     --dropout 0.2 \
     --gamma 6.0 \
     --alpha 0.5 \
-    --lmbda 0.0 \
+    --lmbda 0.00001 \
     --learning_rate 0.00003 \
-    --learning_rate_steps 50000 \
+    --learning_rate_steps 100000 \
     --weight_decay 0.0 \
     --criterion NS \
     --negative_sample_size 256 \
-    --negative_time_sample_size 0 \
+    --negative_time_sample_size 8 \
     --negative_max_time_gap 0 \
     --batch_size 64 \
-    --test_batch_size 8 \
-    --max_steps 100000 \
+    --test_batch_size 1 \
+    --max_steps 200000 \
     --save_path models/${ID} \
     --metric MRR \
     --mode head \
-    --valid_steps 5000 \
-    --valid_approximation 50 \
-    --log_steps 1000 \
-    --test_log_steps 10 \
+    --valid_steps 10000 \
+    --valid_approximation 0 \
+    --log_steps 100 \
+    --test_log_steps 100 \
     --log_dir runs/${ID} \
     --timezone "America/Montreal" \
     --do_train --do_valid --do_test \
