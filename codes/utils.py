@@ -26,6 +26,8 @@ def args():
     parser.add_argument('--do_eval', action='store_true')
     parser.add_argument('--do_test', action='store_true')
 
+    parser.add_argument('--static', action='store_true')
+
     # Hyper-parameters
     parser.add_argument('--static_dim', default=256, type=int)
     parser.add_argument('--absolute_dim', default=256, type=int)
@@ -69,8 +71,7 @@ def args():
     parser.add_argument('--valid_approximation', default=0, type=int)
     parser.add_argument('--log_steps', default=1000, type=int)
     parser.add_argument('--test_log_steps', default=1000, type=int)
-    parser.add_argument('--tensorboard_dir', default=None, type=str)
-    parser.add_argument('--wandb_dir', default=None, type=str)
+    parser.add_argument('--log_dir', default=None, type=str)
 
     parser.add_argument('--timezone', default='America/Montreal', type=str)
 
@@ -100,12 +101,12 @@ def index(fn, args):
     return ix
 
 
-def read(fn, e2id, r2id):
+def read(fn, e2id, r2id, stt=False):
     q = []
     with open(fn) as f:
         for l in f:
             s, r, o, t = l.strip().split('\t')
-            q.append((e2id[s], r2id[r], e2id[o], int(t)))
+            q.append((e2id[s], r2id[r], e2id[o], 0 if stt else int(t)))
     return q
 
 
@@ -156,9 +157,11 @@ def tensorboard_scalars(tb_sw, md, stp, mtrs):
 
 
 def tensorboard_hparam(tb_sw, mtrs, args):
-    hparams_exc = ['do_train', 'do_valid', 'do_eval', 'do_test',
-                   'test_batch_size'
-                   'valid_steps', 'valid_approximation', 'log_steps', 'test_log_steps', 'tensorboard_dir', 'wandb_dir']
+    hparams_exc = [
+        'do_train', 'do_valid', 'do_test', 'do_eval',
+        'test_batch_size'
+        'valid_steps', 'log_steps', 'test_log_steps',
+    ]
     hparams_dict = {hparam: getattr(args, hparam) for hparam in vars(args) if hparam not in hparams_exc}
     tb_sw.add_hparams(hparams_dict, mtrs)
 

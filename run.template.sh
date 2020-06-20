@@ -22,7 +22,7 @@ MODEL=RotatE
 DATASET=DS
 ID=${MODEL}_${DATASET}_${SLURM_JOB_ID}
 
-python -u main.py \
+python -u codes/run.py \
     --id ${ID} \
     --dataset data/${DATASET} \
     --model ${MODEL} \
@@ -32,7 +32,7 @@ python -u main.py \
     --dropout 0.2 \
     --gamma 6.0 \
     --alpha 0.5 \
-    --lmbda 0.001 \
+    --lmbda 0.00001 \
     --learning_rate 0.00003 \
     --learning_rate_steps 100000 \
     --weight_decay 0.0 \
@@ -50,8 +50,7 @@ python -u main.py \
     --valid_approximation 0 \
     --log_steps 100 \
     --test_log_steps 100 \
-    --tensorboard_dir logs/tensorboard/${ID} \
-    --wandb_dir logs \
+    --log_dir runs/${ID} \
     --timezone "America/Montreal" \
     --do_train --do_valid --do_test \
     --negative_adversarial_sampling \
