@@ -116,10 +116,10 @@ class KGEModel(nn.Module):
 
         if self.mdl_nm in ['RotatE', 'ComplEx']:
             re_d_sin, im_d_sin = torch.chunk(d * d_frq + d_phi, 2, dim=1)
-            d_emb = torch.cat([d_amp * torch.sin(re_d_sin), d_amp * torch.cos(im_d_sin)], dim=1)
+            d_emb = torch.cat([d_amp * torch.cos(re_d_sin), d_amp * torch.sin(im_d_sin)], dim=1)
 
             re_m_sin, im_m_sin = torch.chunk(m * m_frq + m_phi, 2, dim=1)
-            m_emb = torch.cat([m_amp * torch.sin(re_m_sin), m_amp * torch.cos(im_m_sin)], dim=1)
+            m_emb = torch.cat([m_amp * torch.cos(re_m_sin), m_amp * torch.sin(im_m_sin)], dim=1)
 
             # re_y_sin, im_y_sin = torch.chunk(y * y_frq + y_phi, 2, dim=1)
             # y_emb = torch.cat([y_amp * torch.sin(re_y_sin), y_amp * torch.cos(im_y_sin)], dim=1)
@@ -414,7 +414,7 @@ class KGEModel(nn.Module):
         if md is not None:
             re_true_o, im_true_o = torch.chunk(t_neg[1], 2, dim=2)
             re_o_neg = torch.cat([re_true_o.repeat(1, re_o_t_neg.size(1), 1), re_o_t_neg], dim=2)
-            im_o_neg = torch.cat([re_true_o.repeat(1, im_o_t_neg.size(1), 1), im_o_t_neg], dim=2)
+            im_o_neg = torch.cat([im_true_o.repeat(1, im_o_t_neg.size(1), 1), im_o_t_neg], dim=2)
 
         if md != 't':
             re_o = torch.cat([re_o, re_o_t], dim=2)
@@ -584,8 +584,8 @@ class KGEModel(nn.Module):
         re_c, im_c = torch.chunk(c, 2, dim=2)
 
         sc = torch.stack([torch.cat([re_sc, re_b, re_c], dim=2), torch.cat([im_sc, im_b, im_c], dim=2)], dim=0)
-        sc = sc.norm(dim=0)
         sc = F.dropout(sc, p=self.drp, training=self.training)
+        sc = sc.norm(dim=0)
         sc = self.gamma.item() - sc.sum(dim=2)
 
         return sc
