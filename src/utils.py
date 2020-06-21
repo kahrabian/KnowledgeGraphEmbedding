@@ -26,8 +26,6 @@ def args():
     parser.add_argument('--do_eval', action='store_true')
     parser.add_argument('--do_test', action='store_true')
 
-    parser.add_argument('--static', action='store_true')
-
     # Hyper-parameters
     parser.add_argument('--static_dim', default=256, type=int)
     parser.add_argument('--absolute_dim', default=256, type=int)
@@ -101,12 +99,12 @@ def index(fn, args):
     return ix
 
 
-def read(fn, e2id, r2id, stt=False):
+def read(fn, e2id, r2id):
     q = []
     with open(fn) as f:
         for l in f:
             s, r, o, t = l.strip().split('\t')
-            q.append((e2id[s], r2id[r], e2id[o], 0 if stt else int(t)))
+            q.append((e2id[s], r2id[r], e2id[o], int(t)))
     return q
 
 

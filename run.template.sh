@@ -22,19 +22,19 @@ MODEL=RotatE
 DATASET=DS
 ID=${MODEL}_${DATASET}_${SLURM_JOB_ID}
 
-python -u codes/run.py \
+python -u src/run.py \
     --id ${ID} \
     --dataset data/${DATASET} \
     --model ${MODEL} \
     --static_dim SD \
     --absolute_dim AD \
     --relative_dim RD \
-    --dropout 0.2 \
+    --dropout 0.4 \
     --gamma 6.0 \
     --alpha 0.5 \
-    --lmbda 0.00001 \
-    --learning_rate 0.00003 \
-    --learning_rate_steps 100000 \
+    --lmbda 0.0005 \
+    --learning_rate 0.0003 \
+    --learning_rate_steps 10000,100000 \
     --weight_decay 0.0 \
     --criterion NS \
     --negative_sample_size 256 \

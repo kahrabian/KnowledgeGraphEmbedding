@@ -39,9 +39,9 @@ def main(args):
     for k, v in sorted(vars(args).items()):
         logging.info(f'{k} = {v}')
 
-    tr_q = ut.read(os.path.join(args.dataset, 'train.txt'), e2id, r2id, args.static)
-    vd_q = ut.read(os.path.join(args.dataset, 'valid.txt'), e2id, r2id, args.static)
-    ts_q = ut.read(os.path.join(args.dataset, 'test.txt'), e2id, r2id, args.static)
+    tr_q = ut.read(os.path.join(args.dataset, 'train.txt'), e2id, r2id)
+    vd_q = ut.read(os.path.join(args.dataset, 'valid.txt'), e2id, r2id)
+    ts_q = ut.read(os.path.join(args.dataset, 'test.txt'), e2id, r2id)
     logging.info(f'# Train = {len(tr_q)}')
     logging.info(f'# Valid = {len(vd_q)}')
     logging.info(f'# Test = {len(ts_q)}')
