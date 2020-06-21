@@ -22,7 +22,7 @@ MODEL=RotatE
 DATASET=DS
 ID=${MODEL}_${DATASET}_${SLURM_JOB_ID}
 
-python -u src/run.py \
+python -u main.py \
     --id ${ID} \
     --dataset data/${DATASET} \
     --model ${MODEL} \

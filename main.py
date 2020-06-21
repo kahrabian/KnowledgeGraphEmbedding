@@ -17,9 +17,9 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 
-import utils as ut
-from dataloader import BidirectionalOneShotIterator, TrainDataset
-from model import KGEModel
+from src import utils as ut
+from src.dataloader import BidirectionalOneShotIterator, TrainDataset
+from src.model import KGEModel
 
 
 def main(args):

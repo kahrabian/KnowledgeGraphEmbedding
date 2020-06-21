@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 
-from dataloader import TestDataset
+from src.dataloader import TestDataset
 
 
 class PositionalEmbedding(nn.Module):
