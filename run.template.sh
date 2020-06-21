@@ -50,7 +50,8 @@ python -u main.py \
     --valid_approximation 0 \
     --log_steps 100 \
     --test_log_steps 100 \
-    --log_dir runs/${ID} \
+    --tensorboard_dir logs/tensorboard/${ID} \
+    --wandb_dir logs \
     --timezone "America/Montreal" \
     --do_train --do_valid --do_test \
     --negative_adversarial_sampling \
