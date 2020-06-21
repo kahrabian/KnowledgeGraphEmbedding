@@ -58,7 +58,9 @@ def train_step(mdl, opt, opt_sc, tr_it, args):
     if args.lmbda != 0.0:
         reg = args.lmbda * (mdl.module.w_rp.norm(p=3) ** 3 +
                             mdl.module.w_e.norm(p=3) ** 3 +
-                            mdl.module.e_emb.norm(p=3) ** 3)
+                            mdl.module.e_emb.norm(p=3) ** 3 +
+                            mdl.module.abs_d_amp_emb.norm(p=3) ** 3 +
+                            mdl.module.abs_m_amp_emb.norm(p=3) ** 3)
         lss += reg
         reg_log = {'regularization': reg.item()}
 
