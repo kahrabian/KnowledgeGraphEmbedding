@@ -69,7 +69,8 @@ def args():
     parser.add_argument('--valid_approximation', default=0, type=int)
     parser.add_argument('--log_steps', default=1000, type=int)
     parser.add_argument('--test_log_steps', default=1000, type=int)
-    parser.add_argument('--log_dir', default=None, type=str)
+    parser.add_argument('--tensorboard_dir', default=None, type=str)
+    parser.add_argument('--wandb_dir', default=None, type=str)
 
     parser.add_argument('--timezone', default='America/Montreal', type=str)
 
@@ -155,11 +156,9 @@ def tensorboard_scalars(tb_sw, md, stp, mtrs):
 
 
 def tensorboard_hparam(tb_sw, mtrs, args):
-    hparams_exc = [
-        'do_train', 'do_valid', 'do_test', 'do_eval',
-        'test_batch_size'
-        'valid_steps', 'log_steps', 'test_log_steps',
-    ]
+    hparams_exc = ['do_train', 'do_valid', 'do_eval', 'do_test',
+                   'test_batch_size'
+                   'valid_steps', 'valid_approximation', 'log_steps', 'test_log_steps', 'tensorboard_dir', 'wandb_dir']
     hparams_dict = {hparam: getattr(args, hparam) for hparam in vars(args) if hparam not in hparams_exc}
     tb_sw.add_hparams(hparams_dict, mtrs)
 
