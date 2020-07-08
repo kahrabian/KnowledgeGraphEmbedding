@@ -32,7 +32,7 @@ class KGEModel(nn.Module):
         self.r_dim = args.static_dim * 2 if self.mdl_nm == 'ComplEx' else args.static_dim
         self.r_dim += (self.abs_dim // 2) if self.mdl_nm == 'RotatE' else self.abs_dim
 
-        self.emb_rng_r = nn.Parameter(torch.Tensor([np.sqrt(6 / (args.nrelation + self.r_dim)), ]), requires_grad=False)
+        self.emb_rng_r = np.sqrt(6 / (args.nrelation + self.r_dim)) / 3.14159265358979323846
 
         self.e_emb = nn.Parameter(torch.zeros(args.nentity, self.stt_dim))
         self.r_emb = nn.Parameter(torch.zeros(args.nrelation, self.r_dim))
@@ -324,11 +324,9 @@ class KGEModel(nn.Module):
         return sc
 
     def RotatE(self, s, r, o, s_t, o_t, s_p, o_p, s_r, o_r, t_neg, md):
-        pi = 3.14159265358979323846
-
         re_s, im_s, re_o, im_o, re_s_neg, im_s_neg, re_o_neg, im_o_neg = self._complex(s, o, s_t, o_t, t_neg, md)
 
-        p_r = r / (self.emb_rng_r.item() / pi)
+        p_r = r / self.emb_rng_r
         re_r, im_r = torch.cos(p_r), torch.sin(p_r)
         if md is not None:
             re_r_neg, im_r_neg = re_r.repeat(1, re_s_neg.size(1), 1), im_r.repeat(1, im_o_neg.size(1), 1)
