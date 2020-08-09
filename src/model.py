@@ -63,11 +63,9 @@ class KGEModel(nn.Module):
         self.p_emb = PositionalEmbedding(self.rel_dim)
 
         self.w_e = nn.Parameter(torch.zeros(self.stt_dim, self.rel_dim // self.mp_dim))
-        self.w_rp_s = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
-        self.w_rp_o = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
+        self.w_rp = nn.Parameter(torch.zeros(args.nrelation, args.nrelation, 1))
         nn.init.xavier_uniform_(self.w_e)
-        nn.init.xavier_uniform_(self.w_rp_s)
-        nn.init.xavier_uniform_(self.w_rp_o)
+        nn.init.xavier_uniform_(self.w_rp)
 
     def e_p_emb(self, e_emb):
         if self.mdl_nm in ['RotatE', 'ComplEx']:
@@ -147,42 +145,42 @@ class KGEModel(nn.Module):
             d_abs, m_abs, y_abs = x[:, 3].view(-1, 1), x[:, 4].view(-1, 1), x[:, 5].view(-1, 1)
 
             s, s_t, s_p, s_r = self._transform(
-                x[:, 0], x[:, 1], x[:, -self.nr * 2:-self.nr], d_abs, m_abs, y_abs, self.w_rp_s)
+                x[:, 0], x[:, 1], x[:, -self.nr * 2:-self.nr], d_abs, m_abs, y_abs, self.w_rp)
             r = torch.index_select(self.r_emb, dim=0, index=x[:, 1]).unsqueeze(1)
-            o, o_t, o_p, o_r = self._transform(x[:, 2], x[:, 1], x[:, -self.nr:], d_abs, m_abs, y_abs, self.w_rp_o)
+            o, o_t, o_p, o_r = self._transform(x[:, 2], x[:, 1], x[:, -self.nr:], d_abs, m_abs, y_abs, self.w_rp)
             t_neg = None
         elif md == 's':
             pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
             d_abs, m_abs, y_abs = pos[:, 3].view(-1, 1), pos[:, 4].view(-1, 1), pos[:, 5].view(-1, 1)
-            s, s_t, s_p, s_r = self._transform_neg(neg, pos[:, 1], neg_rel, d_abs, m_abs, y_abs, self.w_rp_s)
+            s, s_t, s_p, s_r = self._transform_neg(neg, pos[:, 1], neg_rel, d_abs, m_abs, y_abs, self.w_rp)
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
             o, o_t, o_p, o_r = self._transform(
-                pos[:, 2], pos[:, 1], pos[:, -self.nr:].contiguous(), d_abs, m_abs, y_abs, self.w_rp_o)
+                pos[:, 2], pos[:, 1], pos[:, -self.nr:].contiguous(), d_abs, m_abs, y_abs, self.w_rp)
 
             true_s = torch.index_select(self.e_emb, dim=0, index=pos[:, 0]).unsqueeze(1)
             d_abs_neg, m_abs_neg, y_abs_neg = torch.chunk(neg_abs, 3, dim=1)
             s_t_neg, s_r_neg = self._transform_tr_neg(
-                pos[:, 0], pos[:, 1], neg_abs_s_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp_s)
+                pos[:, 0], pos[:, 1], neg_abs_s_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp)
             s_p_neg = self.e_p_emb(true_s)
             o_t_neg, o_r_neg = self._transform_tr_neg(
-                pos[:, 2], pos[:, 1], neg_abs_o_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp_o)
+                pos[:, 2], pos[:, 1], neg_abs_o_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp)
             t_neg = (true_s, o, s_t_neg, o_t_neg, s_p_neg, o_p, s_r_neg, o_r_neg)
         elif md in ['o', 't']:
             pos, neg, neg_abs, neg_abs_s_rel, neg_abs_o_rel, neg_rel = x
 
             d_abs, m_abs, y_abs = pos[:, 3].view(-1, 1), pos[:, 4].view(-1, 1), pos[:, 5].view(-1, 1)
             s, s_t, s_p, s_r = self._transform(pos[:, 0], pos[:, 1], pos[:, -self.nr * 2: -self.nr].contiguous(),
-                                               d_abs, m_abs, y_abs, self.w_rp_s)
+                                               d_abs, m_abs, y_abs, self.w_rp)
             r = torch.index_select(self.r_emb, dim=0, index=pos[:, 1]).unsqueeze(1)
-            o, o_t, o_p, o_r = self._transform_neg(neg, pos[:, 1], neg_rel, d_abs, m_abs, y_abs, self.w_rp_o)
+            o, o_t, o_p, o_r = self._transform_neg(neg, pos[:, 1], neg_rel, d_abs, m_abs, y_abs, self.w_rp)
 
             true_o = torch.index_select(self.e_emb, dim=0, index=pos[:, 2]).unsqueeze(1)
             d_abs_neg, m_abs_neg, y_abs_neg = torch.chunk(neg_abs, 3, dim=1)
             s_t_neg, s_r_neg = self._transform_tr_neg(
-                pos[:, 0], pos[:, 1], neg_abs_s_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp_s)
+                pos[:, 0], pos[:, 1], neg_abs_s_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp)
             o_t_neg, o_r_neg = self._transform_tr_neg(
-                pos[:, 2], pos[:, 1], neg_abs_o_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp_o)
+                pos[:, 2], pos[:, 1], neg_abs_o_rel, neg_abs, d_abs_neg, m_abs_neg, y_abs_neg, self.w_rp)
             o_p_neg = self.e_p_emb(true_o)
             t_neg = (s, true_o, s_t_neg, o_t_neg, s_p, o_p_neg, s_r_neg, o_r_neg)
 
