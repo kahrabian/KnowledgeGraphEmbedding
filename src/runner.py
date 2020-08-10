@@ -145,7 +145,7 @@ def test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args):
     for mtr in logs[0].keys():
         mtrs[mtr] = sum([log[mtr] for log in logs]) / len(logs)
 
-    with open(os.path.join(args.save_path or args.checkpoint, 'inference.log')) as f:
+    with open(os.path.join(args.save_path or args.checkpoint, 'inference.log'), 'w') as f:
         for log in logs:
             f.write(f'{log["MR"]}\n')
 
