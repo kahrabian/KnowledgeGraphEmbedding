@@ -42,6 +42,7 @@ def main(args):
 
     tp_ix, tp_rix = ut.type_index(args) if args.negative_type_sampling or args.type_evaluation else (None, None)
     e_ix, u_ix = ut.users_index(args) if args.heuristic_evaluation else (None, None)
+    int_ix = ut.integrator_index(args) if args.integrator else None
 
     mdl = nn.DataParallel(KGEModel(args))
     if args.cuda:
@@ -106,7 +107,7 @@ def main(args):
 
             if args.do_valid and stp % args.valid_steps == 0:
                 logging.info('Evaluating on Valid Dataset ...')
-                mtrs = test_step(mdl, vd_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args)
+                mtrs = test_step(mdl, vd_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, int_ix, args)
                 if bst_mtrs.get(args.metric, None) is None or mtrs[args.metric] > bst_mtrs[args.metric]:
                     bst_mtrs = mtrs.copy()
                     var_ls = {'step': stp}
@@ -118,7 +119,7 @@ def main(args):
 
     if args.do_eval:
         logging.info('Evaluating on Training Dataset ...')
-        mtrs = test_step(mdl, tr_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args)
+        mtrs = test_step(mdl, tr_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, int_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'eval', stp, mtrs)
 
@@ -127,7 +128,7 @@ def main(args):
         test_log_steps, args.test_log_steps = args.test_log_steps, 100
         logging.info('Evaluating on Test Dataset ...')
         mdl.load_state_dict(torch.load(os.path.join(args.save_path, f'checkpoint.chk'))['mdl_state_dict'])
-        mtrs = test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args)
+        mtrs = test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, int_ix, args)
         ut.log('Test', stp, mtrs)
         ut.tensorboard_scalars(tb_sw, 'test', stp, mtrs)
         args.valid_approximation = valid_approximation

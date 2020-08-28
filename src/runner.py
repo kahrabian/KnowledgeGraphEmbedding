@@ -69,20 +69,20 @@ def train_step(mdl, opt, opt_sc, tr_it, args):
     return {**reg_log, **lss_log, 'loss': lss.item()}
 
 
-def test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args):
+def test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, int_ix, args):
     mdl.eval()
 
     ts_dls = []
     if args.mode in ['head', 'both', 'full']:
-        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 's', args),
+        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, int_ix, 's', args),
                                   batch_size=args.test_batch_size,
                                   num_workers=max(1, os.cpu_count() // 2)), 's'))
     if args.mode in ['tail', 'both', 'full']:
-        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 'o', args),
+        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, int_ix, 'o', args),
                                   batch_size=args.test_batch_size,
                                   num_workers=max(1, os.cpu_count() // 2)), 'o'))
     if args.mode in ['time', 'full']:
-        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, 't', args),
+        ts_dls.append((DataLoader(TestDataset(ts_q, al_q, ev_ix, int_ix, 't', args),
                                   batch_size=args.test_batch_size,
                                   num_workers=max(1, os.cpu_count() // 2)), 't'))
 
@@ -108,7 +108,13 @@ def test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args):
                 as_sc = torch.argsort(sc, dim=1, descending=True).cpu().numpy()
 
                 if md == 's':
-                    true_pos, pos_u_ix = pos[:, 0], pos[:, 2]
+                    if not args.integrator:
+                        true_pos, pos_u_ix = pos[:, 0], pos[:, 2]
+                    else:
+                        true_pos = []
+                        for s, o in zip(pos[:, 0], pos[:, 2]):
+                            true_pos.append(int_ix[str(o.item())].index(s.item()))
+                        true_pos = torch.from_numpy(np.array(true_pos).astype(np.int))
                 elif md == 'o':
                     true_pos, pos_u_ix = pos[:, 2], pos[:, 0]
                 elif md == 't':
@@ -121,9 +127,9 @@ def test_step(mdl, ts_q, al_q, ev_ix, tp_ix, tp_rix, e_ix, u_ix, args):
 
                 for i in range(pos.size(0)):
                     r = np.argwhere(as_sc[i, :] == true_pos[i].item())[0, 0] + 1
-                    if md != 't' and args.type_evaluation:
+                    if md != 't' and args.type_evaluation and not args.integrator:
                         ix = tp_ix[tp_rix[true_pos[i].item()]]
-                        if args.heuristic_evaluation:
+                        if args.heuristic_evaluation and not args.integrator:
                             _ix = u_ix.get(e_ix.get(pos_u_ix[i].item(), ''), [])
                             u_r = np.isin(as_sc[i, :], _ix)[:r].sum()
                             r = np.isin(as_sc[i, :], ix)[:r].sum() if u_r == 0 else u_r

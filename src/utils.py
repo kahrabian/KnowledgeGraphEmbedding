@@ -52,6 +52,7 @@ def args():
     # Evaluation Config
     parser.add_argument('--heuristic_evaluation', action='store_true')
     parser.add_argument('--type_evaluation', action='store_true')
+    parser.add_argument('--integrator', action='store_true')
 
     # Train Config
     parser.add_argument('--batch_size', default=1024, type=int)
@@ -83,7 +84,7 @@ def event_index(tr_q):
         tr_ix[s][r].append((o, t))
         tr_ix[o][r].append((s, t))
 
-    ix = defaultdict(lambda: defaultdict(lambda : {'e': [], 't': []}))
+    ix = defaultdict(lambda: defaultdict(lambda: {'e': [], 't': []}))
     for k in tr_ix:
         for r in tr_ix[k]:
             ix_k_r = sorted(set(tr_ix[k][r]), key=lambda x: x[1])
@@ -100,6 +101,11 @@ def index(fn, args):
             i, r = l.strip().split('\t')
             ix[r] = int(i)
     return ix
+
+
+def integrator_index(args):
+    with open(os.path.join(args.dataset, 'integrator.dict'), 'r') as f:
+        return json.loads(f.read())
 
 
 def read(fn, e2id, r2id):

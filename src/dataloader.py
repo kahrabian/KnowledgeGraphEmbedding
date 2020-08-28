@@ -164,14 +164,16 @@ class TrainDataset(Dataset):
 class TestDataset(Dataset):
     day = 24 * 60 * 60
 
-    def __init__(self, tup, al_t, ev_ix, md, args):
+    def __init__(self, tup, al_t, ev_ix, int_ix, md, args):
         self.tup = tup
         self.md = md
 
         self.nentity = args.nentity
         self.nrelation = args.nrelation
+        self.integrator = args.integrator
 
         self.ev_ix = ev_ix
+        self.int_ix = int_ix
 
         self.tz = pytz.timezone(args.timezone)
         self.min_ts = min(map(lambda x: x[3], self.tup))
@@ -205,8 +207,12 @@ class TestDataset(Dataset):
         o_rel = self._lt(o, t)[0]
 
         if self.md == 's':
-            fil_b_neg = [(0, i) if (i, r, o, d, m, y) not in self.al_t else (-1, s) for i in range(self.nentity)]
-            fil_b_neg[s] = (0, s)
+            if not self.integrator:
+                fil_b_neg = [(0, i) if (i, r, o, d, m, y) not in self.al_t else (-1, s) for i in range(self.nentity)]
+                fil_b_neg[s] = (0, s)
+            else:
+                fil_b_neg = [(0, i) if (i, r, o, d, m, y) not in self.al_t else (-1, s) for i in self.int_ix[str(o)]]
+                fil_b_neg[self.int_ix[str(o)].index(s)] = (0, s)
         elif self.md == 'o':
             fil_b_neg = [(0, i) if (s, r, i, d, m, y) not in self.al_t else (-1, o) for i in range(self.nentity)]
             fil_b_neg[o] = (0, o)
